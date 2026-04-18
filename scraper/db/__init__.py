@@ -10,3 +10,4 @@ missing DB never fails a running scrape.
 """
 from .connection import get_conn, close_conn, pg_configured
 from .jobs import upsert_job_status
+from .ingest import ingest_snapshot
