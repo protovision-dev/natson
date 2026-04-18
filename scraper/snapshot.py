@@ -6,14 +6,21 @@ plus a per-job summary at output/snapshots/{YYYY-MM-DD}/summary_{job_id}.json.
 The legacy `{hotel_id}[_{ota_suffix}].json` filename is still supported
 for callers that don't supply a job_id (e.g. one-off standalone usage).
 
-This module is the adapter layer that will grow a Postgres backend in
-Phase 5.
+This is also the dual-write point for Postgres (Phase 5).  JSON is
+written first and is authoritative; if the DB is configured and
+WRITE_DB != "0", we then call `db.ingest_snapshot()`.  A DB failure is
+logged but never raised — the scrape always succeeds as long as the
+JSON lands.
 """
 import json
+import logging
+import os
 from datetime import date, datetime, timezone
 from pathlib import Path
 
 from config import SNAPSHOTS_DIR
+
+_log = logging.getLogger(__name__)
 
 
 def _day_dir(scrape_date: str | date | None = None) -> Path:
@@ -43,10 +50,24 @@ def save_hotel_snapshot(
     ota: str | None = None,
     ota_suffix: str = "",
 ) -> Path:
-    """Write one hotel's snapshot to disk. Returns the file path."""
+    """Write one hotel's snapshot to disk. Returns the file path.
+
+    Also dual-writes to Postgres via db.ingest_snapshot() when
+    configured.  JSON is authoritative; DB failures are logged, never
+    raised.
+    """
     d = _day_dir(scrape_date)
     p = d / _snapshot_filename(hotel_id, job_id=job_id, ota=ota, ota_suffix=ota_suffix)
     p.write_text(json.dumps(data, indent=2, default=str))
+
+    if os.environ.get("WRITE_DB", "1") != "0" and job_id:
+        try:
+            from db import ingest_snapshot, pg_configured  # lazy import
+            if pg_configured():
+                ingest_snapshot(data, job_id=job_id)
+        except Exception as e:
+            _log.warning("DB ingest skipped (%s: %s)", type(e).__name__, e)
+
     return p
 
 

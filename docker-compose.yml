@@ -39,8 +39,8 @@ services:
       BROWSER_API: "http://browser-api:8765"
       OUT_DIR: "/app/output"
       HOTELS_FILE: "/app/hotels.json"
-      # WRITE_DB is read by snapshot.py in Phase 5; currently unused.
-      WRITE_DB: "0"
+      # Dual-write JSON → Postgres.  Opt out with WRITE_DB=0 for debugging.
+      WRITE_DB: "${WRITE_DB:-1}"
     volumes:
       - session_vol:/app/output:rw
       # Bind-mount hotels.json + subject_hotels.json so admin.py edits

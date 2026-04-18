@@ -1,8 +1,9 @@
 {
-  "_comment": "Subject (portfolio) hotel metadata for the rate-tracking schema. One entry per hotel_id in hotels.json. Fields map to the subject_hotels table (db/migrations/0003_dimensions.sql): internal_code is your stable human-readable code; display_name is what shows in Metabase; brand is the OTA-agnostic chain name; city/state/country are for geo filters; lighthouse_compset_id is the compsetId query param used in the Lighthouse URL (currently 1 for all 10).",
+  "_comment": "Subject (portfolio) hotel metadata for the rate-tracking schema. `subscription_id` matches the hotels.json key and is what drives /rates and /liveshop. `hotelinfo_id` is the Lighthouse ID shared across OTAs (= hotels.external_hotel_id in the DB). internal_code is your stable human-readable code. brand/city/state/country are Metabase filters.",
   "subjects": [
     {
-      "hotel_id": "345062",
+      "subscription_id": "345062",
+      "hotelinfo_id": "515836",
       "internal_code": "ESA-AUS-LAKE",
       "display_name": "ESA Austin Lakeline",
       "city": "Austin",
@@ -12,7 +13,8 @@
       "lighthouse_compset_id": 1
     },
     {
-      "hotel_id": "345069",
+      "subscription_id": "345069",
+      "hotelinfo_id": "518561",
       "internal_code": "ESA-CLW-CARL",
       "display_name": "ESA Clearwater Carillon",
       "city": "Clearwater",
@@ -22,7 +24,8 @@
       "lighthouse_compset_id": 1
     },
     {
-      "hotel_id": "344406",
+      "subscription_id": "344406",
+      "hotelinfo_id": "519010",
       "internal_code": "HTS-ATL-LAWR",
       "display_name": "HomeTowne Studios Atlanta Lawrenceville",
       "city": "Lawrenceville",
@@ -32,7 +35,8 @@
       "lighthouse_compset_id": 1
     },
     {
-      "hotel_id": "276780",
+      "subscription_id": "276780",
+      "hotelinfo_id": "47997",
       "internal_code": "M6-ORL-INTL",
       "display_name": "Motel 6 Orlando International Dr",
       "city": "Orlando",
@@ -42,7 +46,8 @@
       "lighthouse_compset_id": 1
     },
     {
-      "hotel_id": "276782",
+      "subscription_id": "276782",
+      "hotelinfo_id": "373927",
       "internal_code": "M6-ORL-WPAR",
       "display_name": "Motel 6 Orlando Winter Park",
       "city": "Orlando",
@@ -52,7 +57,8 @@
       "lighthouse_compset_id": 1
     },
     {
-      "hotel_id": "276792",
+      "subscription_id": "276792",
+      "hotelinfo_id": "1864485",
       "internal_code": "S6-AUS-MID",
       "display_name": "Studio 6 Austin Midtown",
       "city": "Austin",
@@ -62,7 +68,8 @@
       "lighthouse_compset_id": 1
     },
     {
-      "hotel_id": "276784",
+      "subscription_id": "276784",
+      "hotelinfo_id": "1920278",
       "internal_code": "S6-GSO",
       "display_name": "Studio 6 Greensboro",
       "city": "Greensboro",
@@ -72,7 +79,8 @@
       "lighthouse_compset_id": 1
     },
     {
-      "hotel_id": "303035",
+      "subscription_id": "303035",
+      "hotelinfo_id": "1985851",
       "internal_code": "S6-ATL-ROSW",
       "display_name": "Studio 6 Atlanta Roswell",
       "city": "Roswell",
@@ -82,7 +90,8 @@
       "lighthouse_compset_id": 1
     },
     {
-      "hotel_id": "273870",
+      "subscription_id": "273870",
+      "hotelinfo_id": "2760258",
       "internal_code": "S6-RIC-I64W",
       "display_name": "Studio 6 Richmond I-64 West",
       "city": "Richmond",
@@ -92,7 +101,8 @@
       "lighthouse_compset_id": 1
     },
     {
-      "hotel_id": "273872",
+      "subscription_id": "273872",
+      "hotelinfo_id": "1982616",
       "internal_code": "S6-WPB",
       "display_name": "Studio 6 West Palm Beach",
       "city": "West Palm Beach",
