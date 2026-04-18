@@ -556,29 +556,82 @@ def build_dashboards(s: requests.Session, db_id: int) -> None:
 # to M6-ORL-WPAR (matches the Lighthouse screenshot the user referenced)
 # but any subject_code can be picked in the filter dropdown.
 
+# Subjects show up in the dropdown in this order.  Kept in sync with
+# scraper/subject_hotels.json manually — 10 entries, stable.
+SUBJECT_CODES = [
+    "M6-ORL-WPAR",    # default (matches the Lighthouse screenshot)
+    "ESA-AUS-LAKE", "ESA-CLW-CARL", "HTS-ATL-LAWR", "M6-ORL-INTL",
+    "S6-AUS-MID", "S6-GSO", "S6-ATL-ROSW", "S6-RIC-I64W", "S6-WPB",
+]
+
+# Rate grid: three-column long form (stay_date, competitor, value) that
+# Metabase's table.pivot renders as a matrix.  Header names carry a
+# one-digit sort prefix ("1 ", "2 ", "3 ") so the post-pivot column
+# order is: (1) subject's own row, (2) Market demand, (3) compset
+# alphabetical. Competitor names are trimmed to 22 chars + ellipsis so
+# columns don't stretch to full hotel-name width.
+#
+# All cells are TEXT so numeric rates (e.g. "$55") and percentages
+# ("74%") can share the column without Metabase coercing types.
 _RATE_GRID_SQL = """
-SELECT
-    stay_date,
-    CASE WHEN is_own THEN '▶ ' || competitor_name ELSE competitor_name END AS competitor,
-    rate_value
-FROM v_rate_grid_latest
-WHERE source_code = '{source}'
-  AND subject_code = {{{{subject}}}}
-  AND los = 7
-  AND persons = 2
-ORDER BY stay_date, is_own DESC, competitor_name
+-- Three-column long form (stay_date, competitor, value) that Metabase
+-- pivots into a matrix.  Header sort keys '1 ' and '2 ' push the
+-- subject's own column first and market-demand second; all other
+-- competitors sort alphabetically after.  Column widths are NOT fixed
+-- — Metabase auto-distributes within the full-width card.
+WITH base AS (
+    SELECT
+        g.stay_date,
+        CASE
+            WHEN g.is_own THEN '1 ▶ ' || _trim_name(g.competitor_name)
+            ELSE _trim_name(g.competitor_name)
+        END AS competitor,
+        CASE
+            WHEN g.rate_value IS NOT NULL AND g.rate_value > 0
+                THEN '$' || round(g.rate_value)::text
+            WHEN g.message = 'rates.soldout'   THEN 'Sold out'
+            WHEN g.message = 'general.missing' THEN '—'
+            ELSE '—'
+        END AS value
+    FROM v_rate_grid_latest g
+    WHERE g.source_code  = '{source}'
+      AND g.subject_code = {{{{subject}}}}
+      AND g.los          = 7
+      AND g.persons      = 2
+),
+demand AS (
+    SELECT DISTINCT
+        g.stay_date,
+        '2 Market demand' AS competitor,
+        CASE WHEN g.market_demand_pct IS NULL
+             THEN NULL
+             ELSE round(g.market_demand_pct)::text || '%'
+        END AS value
+    FROM v_rate_grid_latest g
+    WHERE g.source_code  = '{source}'
+      AND g.subject_code = {{{{subject}}}}
+      AND g.los          = 7
+      AND g.persons      = 2
+)
+SELECT stay_date, competitor, value FROM base
+UNION ALL
+SELECT stay_date, competitor, value FROM demand
+ORDER BY stay_date, competitor
 """
 
 _MARKET_DEMAND_SQL = """
 SELECT DISTINCT stay_date, market_demand_pct
 FROM v_rate_grid_latest
-WHERE source_code = '{source}'
+WHERE source_code  = '{source}'
   AND subject_code = {{{{subject}}}}
-  AND los = 7
-  AND persons = 2
+  AND los          = 7
+  AND persons      = 2
   AND market_demand_pct IS NOT NULL
 ORDER BY stay_date
 """
+
+# Helper Postgres function that trims long hotel names.  Created by
+# 0013_rate_grid_helper.sql.  Safe to call multiple times.
 
 
 def _subject_template_tag(default: str = "M6-ORL-WPAR") -> dict:
@@ -616,18 +669,18 @@ def _build_rate_grid_dashboard(s, db_id: int, source: str) -> int:
     card_params   = [_subject_parameter()]
     template_tags = _subject_template_tag()
 
-    # Rate grid — Metabase's full "pivot table" viz is restricted to
-    # query-builder questions.  The regular "table" viz supports a
-    # lightweight pivot on native queries via table.pivot + pivot_column
-    # + cell_column.  The query returns exactly (stay_date, competitor,
-    # rate_value); Metabase lays them out as rows × columns × cells.
+    # Rate grid — Metabase's full pivot viz is restricted to query-builder
+    # questions; table.pivot works on native queries. No column_widths
+    # set so the grid auto-fills the card width (à la Lighthouse UI).
+    # Name-column width is kept sane by _trim_name() in SQL (22-char cap +
+    # ellipsis); full names are still in the hotels table for hover/tooltip.
     c_grid = upsert_card(
         s, db_id, f"{label} rate grid — by subject", grid_sql,
         display="table",
         visualization_settings={
             "table.pivot":         True,
             "table.pivot_column":  "competitor",
-            "table.cell_column":   "rate_value",
+            "table.cell_column":   "value",
         },
         template_tags=template_tags,
         parameters=card_params,
@@ -644,19 +697,26 @@ def _build_rate_grid_dashboard(s, db_id: int, source: str) -> int:
         parameters=card_params,
     )
 
+    # Dashboard-level Subject filter: static-list dropdown of the 10
+    # known portfolio codes.  Drives the {{subject}} template var in
+    # both cards via parameter_mappings below.
     dash_params = [{
         "id":      "dash-subject",
         "name":    "Subject",
         "slug":    "subject",
         "type":    "category",
-        "default": "M6-ORL-WPAR",
+        "default": SUBJECT_CODES[0],
+        "values_source_type":   "static-list",
+        "values_source_config": {
+            "values": list(SUBJECT_CODES),
+        },
     }]
     dash_id = upsert_dashboard(
         s, f"{label} rate grid",
         f"Lighthouse-style rate grid for {source}.com.  Rows = stay date, "
-        f"columns = competitor hotels, values = nightly rate.  Change the "
-        f"Subject filter to view a different portfolio property.  LOS=7, "
-        f"persons=2 — edit the card SQL to slice other stay combos.",
+        f"columns = (subject + market demand + compset), cells = nightly "
+        f"rate in USD.  Pick a portfolio property from the Subject filter. "
+        f"LOS=7, persons=2 — edit the card SQL to slice other stay combos.",
         parameters=dash_params,
     )
 
