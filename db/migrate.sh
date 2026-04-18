@@ -67,8 +67,20 @@ cmd_up() {
     local applied pending_any=0
     applied=$(applied_versions | tr '\n' ' ')
 
-    while IFS=$'\t' read -r version filename; do
-        [[ -z "$version" ]] && continue
+    # Materialize the file list into an array first.  Reading via process
+    # substitution doesn't work cleanly here: `docker compose exec -T`
+    # inside the loop consumes stdin from the outer redirect and kills
+    # subsequent iterations.
+    local -a entries=()
+    while IFS= read -r line; do
+        entries+=("$line")
+    done < <(list_versions)
+
+    for line in "${entries[@]}"; do
+        [[ -z "$line" ]] && continue
+        local version filename
+        version="${line%%$'\t'*}"
+        filename="${line#*$'\t'}"
         if [[ " $applied " == *" $version "* ]]; then
             continue
         fi
@@ -86,7 +98,7 @@ cmd_up() {
         fi
         psql_quiet -c \
             "INSERT INTO schema_migrations (version, filename) VALUES ('$version', '$filename') ON CONFLICT (version) DO NOTHING;"
-    done < <(list_versions)
+    done
 
     if (( pending_any == 0 )); then
         echo "[migrate] up to date — no pending migrations"
