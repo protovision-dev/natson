@@ -673,11 +673,10 @@ def _build_rate_grid_dashboard(s, db_id: int, source: str) -> int:
     template_tags = _subject_template_tag()
 
     # Rate grid — table.pivot renders a matrix on native SQL.
-    # column_widths: [stay_date] + 15 × 100 pixels = covers compset sizes
-    # from 6 to 15 competitors.  Total ≈ 1600 px → fills a full-width
-    # dashboard card on a typical laptop.  When a compset is smaller,
-    # Metabase truncates the array naturally; when larger, horizontal
-    # scroll appears.  _trim_name() at 22 chars keeps headers tight.
+    # Widths trimmed ~30% per user feedback (stay_date 80, data cols 70).
+    # Metabase CE has a known limitation: per-column widths on pivoted
+    # native queries aren't always respected — real stretch-to-card-width
+    # is forced via site-wide custom CSS applied in ensure_custom_css().
     c_grid = upsert_card(
         s, db_id, f"{label} rate grid — by subject", grid_sql,
         display="table",
@@ -685,7 +684,7 @@ def _build_rate_grid_dashboard(s, db_id: int, source: str) -> int:
             "table.pivot":         True,
             "table.pivot_column":  "competitor",
             "table.cell_column":   "value",
-            "column_widths":       [110] + [100] * 15,
+            "column_widths":       [80] + [70] * 20,
         },
         template_tags=template_tags,
         parameters=card_params,
