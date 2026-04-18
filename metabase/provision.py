@@ -684,7 +684,7 @@ def _build_rate_grid_dashboard(s, db_id: int, source: str) -> int:
             "table.pivot":         True,
             "table.pivot_column":  "competitor",
             "table.cell_column":   "value",
-            "column_widths":       [80] + [70] * 20,
+            "column_widths":       [56] + [50] * 20,
         },
         template_tags=template_tags,
         parameters=card_params,
