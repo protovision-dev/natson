@@ -136,11 +136,17 @@ Metabase hasn't been touched, else logs in with `METABASE_ADMIN_*`
 creds from `.env`. It creates the admin account, wires the Postgres
 connection, and builds two dashboards:
 
-- **Active scrapes** (http://localhost:3010/dashboard/2) — live count +
-  per-job progress table. Refresh the page to poll.
-- **Scrape history** (http://localhost:3010/dashboard/3) — jobs by
-  state (pie), completed scrapes by OTA (bar), jobs per day (stacked
-  line), and the last-100 table.
+- **Active scrapes** (polls every 30s):
+  http://localhost:3010/dashboard/2#refresh=30
+  — scalar count + per-job progress table.
+- **Scrape history** (polls every 60s):
+  http://localhost:3010/dashboard/3#refresh=60
+  — jobs by state (pie), completed scrapes by OTA (bar), jobs per day
+  (stacked line), and the last-100 table.
+
+`#refresh=N` is a Metabase URL hash that makes the dashboard poll its
+underlying queries every N seconds, so you get a live view without
+reloading. Bookmark the URL with the fragment attached.
 
 Log in with the `METABASE_ADMIN_EMAIL` / `PASSWORD` from your `.env`
 (defaults `admin@natson.local` / placeholder — change for production).
