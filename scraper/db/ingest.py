@@ -292,18 +292,26 @@ def _insert_rate_rows(
                     leadtime_days, demand_pct, los, persons, obs_date, obs_ts,
                     source_id, subject_hotel_id, pk, scrape_run_id,
                 )
-                # Look up prior rates_current for delta computation.
+                # Look up the prior-day rate for delta computation.
+                # Reading from rate_observations (not rates_current) and
+                # filtering on observation_date < today guarantees the
+                # "prior" is genuinely from yesterday or earlier — never
+                # from an earlier run on the same day (which would make
+                # changed_from_prior a false negative on same-day retries).
                 cur.execute(
                     """
-                    SELECT rate_value FROM rates_current
+                    SELECT rate_value FROM rate_observations
                      WHERE source_id            = %s
                        AND subject_hotel_id     = %s
                        AND competitor_hotel_pk  = %s
                        AND stay_date            = %s
                        AND los                  = %s
                        AND persons              = %s
+                       AND observation_date     < %s
+                     ORDER BY observation_date DESC
+                     LIMIT 1
                     """,
-                    (source_id, subject_hotel_id, pk, stay_date, los, persons),
+                    (source_id, subject_hotel_id, pk, stay_date, los, persons, obs_date),
                 )
                 prior_row = cur.fetchone()
                 prior_rate = prior_row[0] if prior_row else None

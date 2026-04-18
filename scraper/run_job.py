@@ -22,6 +22,7 @@ from pathlib import Path
 from config import OUT_DIR, SESSION_FILE, CACHE_DIR
 from jobs.spec import Job, add_cli_args
 from jobs.locks import per_subscription_ota_lock
+from jobs.scrape_lock import ScrapeLock
 from jobs.status import StatusWriter, log_path
 from scrape import make_session, scrape_hotel, Caches
 from snapshot import save_hotel_snapshot, save_job_summary
@@ -123,6 +124,19 @@ def main() -> int:
     sys.stdout = _Tee(sys.stdout, log_file)
     sys.stderr = _Tee(sys.stderr, log_file)
 
+    # Announce this scrape to the login daemon so it defers re-login
+    # while we're holding in-memory cookies.  The lock file is removed
+    # on any exit path (normal return, exception, kill) via the context
+    # manager's __exit__.
+    _scrape_lock = ScrapeLock(OUT_DIR, job.job_id, {
+        "hotels":        job.hotels,
+        "ota":           job.ota,
+        "checkin_from":  str(job.checkin_dates[0]),
+        "checkin_to":    str(job.checkin_dates[-1]),
+        "do_refresh":    job.do_refresh,
+    })
+    _scrape_lock.__enter__()
+
     status = StatusWriter(OUT_DIR, job.job_id, job.to_dict())
     status.set(state="running")
 
@@ -202,8 +216,35 @@ def main() -> int:
     status.log_line(done_line)
     exit_code = 0 if ok == len(summary_results) else 1
     status.finish(exit_code)
+    _scrape_lock.__exit__(None, None, None)
     return exit_code
 
 
+def _run_guarded() -> int:
+    """Wrap main() so any lock file from a partially-initialised run is
+    still cleaned up if we crash after entering ScrapeLock."""
+    try:
+        return main()
+    except BaseException:
+        # ScrapeLock's __exit__ in main() already handled normal exit.
+        # Here we only care about the crash path — try to scan and
+        # scrub any locks our PID created, but don't mask the error.
+        import os as _os, glob as _glob
+        try:
+            pid = _os.getpid()
+            for f in _glob.glob(str(OUT_DIR / "locks" / "active" / "*.lock")):
+                try:
+                    import json as _json
+                    with open(f) as fh:
+                        data = _json.load(fh)
+                    if data.get("pid") == pid:
+                        _os.unlink(f)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        raise
+
+
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(_run_guarded())
