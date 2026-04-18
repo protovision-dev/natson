@@ -180,6 +180,11 @@ connection, and builds two dashboards:
   http://localhost:3010/dashboard/4#refresh=300
   — own rate vs compset median, booking curve per stay_date, rate
   changes, compset coverage, and scrape-run health.
+- **Rate grid** (Subject × Source × LOS filters):
+  http://localhost:3010/dashboard/7
+  — Lighthouse-style pivoted matrix: stay dates × competitors, with a
+  market-demand strip on top and a competitor legend (column header →
+  full name + last updated) at the bottom.
 
 `#refresh=N` is a Metabase URL hash that makes the dashboard poll its
 underlying queries every N seconds, so you get a live view without
