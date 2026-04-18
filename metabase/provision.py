@@ -201,17 +201,20 @@ def _find_by_name(s: requests.Session, path: str, name: str) -> dict | None:
 
 
 def upsert_card(s: requests.Session, db_id: int, name: str, sql: str,
-                display: str, visualization_settings: dict) -> int:
+                display: str, visualization_settings: dict,
+                template_tags: dict | None = None,
+                parameters: list[dict] | None = None) -> int:
     body = {
         "name": name,
         "dataset_query": {
             "type": "native",
-            "native": {"query": sql, "template-tags": {}},
+            "native": {"query": sql, "template-tags": template_tags or {}},
             "database": db_id,
         },
         "display": display,
         "visualization_settings": visualization_settings,
         "database_id": db_id,
+        "parameters": parameters or [],
     }
     existing = _find_by_name(s, "/api/card", name)
     if existing:
@@ -223,12 +226,20 @@ def upsert_card(s: requests.Session, db_id: int, name: str, sql: str,
     return created["id"]
 
 
-def upsert_dashboard(s: requests.Session, name: str, description: str) -> int:
+def upsert_dashboard(s: requests.Session, name: str, description: str,
+                     parameters: list[dict] | None = None) -> int:
     existing = _find_by_name(s, "/api/dashboard", name)
     if existing:
+        # Update parameters if changed (dashboard filters).
+        if parameters is not None:
+            _put(s, f"/api/dashboard/{existing['id']}",
+                 {"parameters": parameters})
         print(f"[mb] dashboard exists: {name} (id={existing['id']})")
         return existing["id"]
-    created = _post(s, "/api/dashboard", {"name": name, "description": description})
+    body = {"name": name, "description": description}
+    if parameters:
+        body["parameters"] = parameters
+    created = _post(s, "/api/dashboard", body)
     print(f"[mb] dashboard created: {name} (id={created['id']})")
     return created["id"]
 
@@ -237,7 +248,9 @@ def set_dashboard_cards(s: requests.Session, dashboard_id: int,
                         layout: list[dict]) -> None:
     """Replace the dashboard's card layout wholesale.
 
-    layout items: {"card_id": N, "row": r, "col": c, "size_x": w, "size_y": h}
+    layout items:
+        {"card_id": N, "row": r, "col": c, "size_x": w, "size_y": h,
+         "parameter_mappings": [...]}        # optional; dashboard-filter wiring
     """
     dashcards = []
     for idx, it in enumerate(layout):
@@ -248,7 +261,7 @@ def set_dashboard_cards(s: requests.Session, dashboard_id: int,
             "col": it["col"],
             "size_x": it["size_x"],
             "size_y": it["size_y"],
-            "parameter_mappings": [],
+            "parameter_mappings": it.get("parameter_mappings", []),
             "visualization_settings": it.get("visualization_settings", {}),
         })
     _put(s, f"/api/dashboard/{dashboard_id}", {"dashcards": dashcards})
@@ -516,6 +529,10 @@ def build_dashboards(s: requests.Session, db_id: int) -> None:
         {"card_id": c_run_health,  "row": 14, "col": 12, "size_x": 12, "size_y": 7},
     ])
 
+    # --- Per-OTA rate grid dashboards (Lighthouse-style) ---
+    booking_grid_id = _build_rate_grid_dashboard(s, db_id, "booking")
+    brand_grid_id   = _build_rate_grid_dashboard(s, db_id, "brand")
+
     # Print user-facing URLs relative to the host (3010 publishes the port).
     # #refresh=N tells Metabase to auto-poll every N seconds — so these
     # links are "live" dashboards, not a one-shot snapshot.
@@ -527,6 +544,141 @@ def build_dashboards(s: requests.Session, db_id: int) -> None:
           f"{host_url}/dashboard/{hist_id}#refresh=60")
     print(f"[mb] Rate intelligence (polls 300s)     → "
           f"{host_url}/dashboard/{rate_id}#refresh=300")
+    print(f"[mb] Booking rate grid                  → "
+          f"{host_url}/dashboard/{booking_grid_id}")
+    print(f"[mb] Brand rate grid                    → "
+          f"{host_url}/dashboard/{brand_grid_id}")
+
+
+# ---------- Per-OTA rate-grid dashboards ----------
+
+# Template variable `{{subject}}` is mapped to a dashboard filter. Defaults
+# to M6-ORL-WPAR (matches the Lighthouse screenshot the user referenced)
+# but any subject_code can be picked in the filter dropdown.
+
+_RATE_GRID_SQL = """
+SELECT
+    stay_date,
+    CASE WHEN is_own THEN '▶ ' || competitor_name ELSE competitor_name END AS competitor,
+    rate_value,
+    is_own,
+    is_available,
+    market_demand_pct,
+    message
+FROM v_rate_grid_latest
+WHERE source_code = '{source}'
+  AND subject_code = {{{{subject}}}}
+  AND los = 7
+  AND persons = 2
+ORDER BY stay_date, is_own DESC, competitor_name
+"""
+
+_MARKET_DEMAND_SQL = """
+SELECT DISTINCT stay_date, market_demand_pct
+FROM v_rate_grid_latest
+WHERE source_code = '{source}'
+  AND subject_code = {{{{subject}}}}
+  AND los = 7
+  AND persons = 2
+  AND market_demand_pct IS NOT NULL
+ORDER BY stay_date
+"""
+
+
+def _subject_template_tag(default: str = "M6-ORL-WPAR") -> dict:
+    return {
+        "subject": {
+            "id": "subject-tag",
+            "name": "subject",
+            "display-name": "Subject",
+            "type": "text",
+            "required": True,
+            "default": default,
+        }
+    }
+
+
+def _subject_parameter(default: str = "M6-ORL-WPAR") -> dict:
+    return {
+        "id": "subject-param",
+        "name": "Subject",
+        "slug": "subject",
+        "type": "category",
+        "target": ["variable", ["template-tag", "subject"]],
+        "default": default,
+    }
+
+
+def _build_rate_grid_dashboard(s, db_id: int, source: str) -> int:
+    """Build one dashboard ('<Source> rate grid') with a subject filter,
+    a market-demand strip, and the pivoted rate grid."""
+    label = source.capitalize()
+
+    grid_sql   = _RATE_GRID_SQL.format(source=source)
+    demand_sql = _MARKET_DEMAND_SQL.format(source=source)
+
+    card_params   = [_subject_parameter()]
+    template_tags = _subject_template_tag()
+
+    # Rate grid — Metabase pivots native-query results via the
+    # "pivot" display + pivot_table.column_split.  `values` is the
+    # column Metabase will aggregate (sum of 1 row per cell = itself).
+    c_grid = upsert_card(
+        s, db_id, f"{label} rate grid — by subject", grid_sql,
+        display="pivot",
+        visualization_settings={
+            "pivot_table.column_split": {
+                "rows":    [["field", "stay_date",  {"base-type": "type/Date"}]],
+                "columns": [["field", "competitor", {"base-type": "type/Text"}]],
+                "values":  [["field", "rate_value", {"base-type": "type/Decimal"}]],
+            },
+        },
+        template_tags=template_tags,
+        parameters=card_params,
+    )
+
+    c_demand = upsert_card(
+        s, db_id, f"{label} market demand — by subject", demand_sql,
+        display="bar",
+        visualization_settings={
+            "graph.dimensions": ["stay_date"],
+            "graph.metrics":    ["market_demand_pct"],
+        },
+        template_tags=template_tags,
+        parameters=card_params,
+    )
+
+    dash_params = [{
+        "id":      "dash-subject",
+        "name":    "Subject",
+        "slug":    "subject",
+        "type":    "category",
+        "default": "M6-ORL-WPAR",
+    }]
+    dash_id = upsert_dashboard(
+        s, f"{label} rate grid",
+        f"Lighthouse-style rate grid for {source}.com.  Rows = stay date, "
+        f"columns = competitor hotels, values = nightly rate.  Change the "
+        f"Subject filter to view a different portfolio property.  LOS=7, "
+        f"persons=2 — edit the card SQL to slice other stay combos.",
+        parameters=dash_params,
+    )
+
+    # Wire the dashboard Subject filter → each card's {{subject}} template tag.
+    param_mapping = [{
+        "parameter_id": "dash-subject",
+        "card_id":      None,   # filled in per dashcard below
+        "target":       ["variable", ["template-tag", "subject"]],
+    }]
+
+    layout = [
+        {"card_id": c_demand, "row": 0, "col": 0, "size_x": 24, "size_y": 4,
+         "parameter_mappings": [{**param_mapping[0], "card_id": c_demand}]},
+        {"card_id": c_grid,   "row": 4, "col": 0, "size_x": 24, "size_y": 14,
+         "parameter_mappings": [{**param_mapping[0], "card_id": c_grid}]},
+    ]
+    set_dashboard_cards(s, dash_id, layout)
+    return dash_id
 
 
 def main() -> int:
