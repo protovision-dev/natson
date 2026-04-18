@@ -1,0 +1,129 @@
+services:
+  browser-api:
+    build: ./browser-api
+    container_name: natson-browser-api
+    ports:
+      - "8765:8765"
+    restart: unless-stopped
+    env_file:
+      - ./browser-api/.env
+    environment:
+      MAX_CONCURRENCY: "${MAX_CONCURRENCY:-4}"
+      DEFAULT_UA: "${DEFAULT_UA:-Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:140.0) Gecko/20100101 Firefox/140.0}"
+      DEFAULT_OS: "${DEFAULT_OS:-macos}"
+      DEFAULT_LOCALE: "${DEFAULT_LOCALE:-en-US}"
+      PROXY_SERVER: "${PROXY_SERVER}"
+      PROXY_USERNAME: "${PROXY_USERNAME}"
+      PROXY_PASSWORD: "${PROXY_PASSWORD}"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8765/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks:
+      - natson
+
+  scraper:
+    build: ./scraper
+    image: natson-scraper:latest
+    container_name: natson-scraper
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      browser-api:
+        condition: service_started
+    env_file:
+      - .env
+    environment:
+      BROWSER_API: "http://browser-api:8765"
+      OUT_DIR: "/app/output"
+      HOTELS_FILE: "/app/hotels.json"
+      # WRITE_DB is read by snapshot.py in Phase 5; currently unused.
+      WRITE_DB: "0"
+    volumes:
+      - session_vol:/app/output:rw
+    networks:
+      - natson
+
+  scraper-login:
+    # Same image as scraper; different entrypoint. Phase 4 will switch
+    # this to login_daemon.py; for now it's a placeholder that no-ops so
+    # `docker compose up` doesn't fail on a missing file.
+    image: natson-scraper:latest
+    container_name: natson-scraper-login
+    restart: unless-stopped
+    depends_on:
+      scraper:
+        condition: service_started
+    env_file:
+      - .env
+    environment:
+      BROWSER_API: "http://browser-api:8765"
+      OUT_DIR: "/app/output"
+    volumes:
+      - session_vol:/app/output:rw
+    command: ["sleep", "infinity"]
+    networks:
+      - natson
+
+  postgres:
+    image: postgres:16
+    container_name: natson-postgres
+    restart: unless-stopped
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    env_file:
+      - .env
+    environment:
+      POSTGRES_DB: "${POSTGRES_DB}"
+      POSTGRES_USER: "${POSTGRES_USER}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - natson
+
+  metabase:
+    image: metabase/metabase:latest
+    container_name: natson-metabase
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${METABASE_PORT:-3000}:3000"
+    env_file:
+      - .env
+    environment:
+      MB_DB_TYPE: postgres
+      MB_DB_DBNAME: "${METABASE_DB}"
+      MB_DB_PORT: "5432"
+      MB_DB_USER: "${METABASE_DB_USER}"
+      MB_DB_PASS: "${METABASE_DB_PASSWORD}"
+      MB_DB_HOST: postgres
+    volumes:
+      - metabase_data:/metabase-data
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - natson
+
+volumes:
+  pg_data:
+  metabase_data:
+  session_vol:
+
+networks:
+  natson:
+    driver: bridge
