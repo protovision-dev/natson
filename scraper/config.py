@@ -79,24 +79,51 @@ def month_range(month: str) -> tuple[str, str]:
 grid_range = month_range
 
 
-def build_rates_api_url(hotel_id: str, month: str, compset_id: int = 1,
-                        los: int = 7, persons: int = 2,
-                        ota: str = "bookingdotcom") -> str:
-    """Lighthouse backend rates API URL (what scrape.py calls)."""
-    start, end = grid_range(month)
+def build_rates_api_url(
+    hotel_id: str,
+    month: str | None = None,
+    *,
+    from_date: str | None = None,
+    to_date: str | None = None,
+    compset_id: int = 1,
+    los: int = 7,
+    persons: int = 2,
+    ota: str = "bookingdotcom",
+    mealtype: int = 0,
+    membershiptype: int = 0,
+    platform: int = -1,
+    roomtype: str = "all",
+    bar: bool = True,
+    flexible: bool = True,
+    rate_type: int = 0,
+    meta: str = "nested",
+) -> str:
+    """Lighthouse backend rates API URL.
+
+    Supply either `month='YYYY-MM'` (legacy, expands to its full range) or
+    explicit `from_date` + `to_date` (preferred for Job-driven scrapes
+    where the window is arbitrary).
+    """
+    if month is not None:
+        start, end = grid_range(month)
+    else:
+        if not (from_date and to_date):
+            raise ValueError("provide `month` or both `from_date`+`to_date`")
+        start, end = from_date, to_date
+
     return f"{RATES_API}?{urlencode({
         'ota': ota,
         'los': los,
-        'mealtype': 0,
+        'mealtype': mealtype,
         'persons': persons,
-        'roomtype': 'all',
-        'membershiptype': 0,
+        'roomtype': roomtype,
+        'membershiptype': membershiptype,
         'compset_ids': compset_id,
-        'platform': -1,
-        'meta': 'nested',
-        'bar': 'true',
-        'flexible': 'true',
-        'rate_type': 0,
+        'platform': platform,
+        'meta': meta,
+        'bar': 'true' if bar else 'false',
+        'flexible': 'true' if flexible else 'false',
+        'rate_type': rate_type,
         'from_date_range_start': start,
         'from_date_range_end': end,
         'hotel_id': hotel_id,

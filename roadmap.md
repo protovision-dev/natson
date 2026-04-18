@@ -89,21 +89,29 @@ Each phase = one commit on `refactor/dockerize-stack`.
   `scraper_output`.
 - `db/init/00_extensions.sql` placeholder.
 
-### Phase 3 — Config file + Job abstraction + `run_job` CLI
+### Phase 3 — Config file + Job abstraction + `run_job` CLI + Metabase-visible job state
 
 - `scraper/scraper.config.yml` — all URL-param defaults + pacing.
 - `scraper/jobs/` module — `spec.py` (Job dataclass),
   `dates.py` (5-syntax parser + ≤31-day window splitter),
   `hotels.py` (resolver + admin add/remove), `locks.py`
-  (per-(hotel, ota) flock).
+  (per-(hotel, ota) flock), `status.py` (filesystem + Postgres
+  state writer).
 - `scraper/run_job.py` — new entrypoint; honors `do_refresh` +
   `refresh-only`; writes resolved spec to
-  `output/jobs/{job_id}/spec.json` for reproducibility.
+  `output/jobs/{job_id}/spec.json` for reproducibility and tees
+  stdout to `output/jobs/{job_id}/run.log`.
 - `config.py` URL builder: every param becomes a kwarg.
 - `refresh.py`: `trigger_refresh(params: dict)`.
 - `scrape.py`: becomes a library (`scrape_hotel(job, hotel_id, sess)`);
   old argparse moves to `run_job.py`. Legacy flags kept as shortcuts.
 - `snapshot.py`: filename gains `job_id`.
+- **Job state → Postgres (pulled forward from Phase 5):**
+  `db/init/02_scrape_jobs.sql` creates `scrape_jobs` table +
+  `active_scrapes` / `recent_scrapes` views. `scraper/db/`
+  (connection.py, jobs.py) upserts a row on every Job state
+  transition so Metabase can render live progress across concurrent
+  jobs. Falls back silently if Postgres is unreachable.
 
 ### Phase 4 — Login daemon + portfolio admin
 

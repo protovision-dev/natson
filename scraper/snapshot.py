@@ -1,7 +1,13 @@
-"""Daily snapshot storage — write and read per-hotel JSON snapshots.
+"""Per-job snapshot storage.
 
-Writes to output/snapshots/{YYYY-MM-DD}/{hotel_id}.json.
-This module is the adapter layer that will grow a Postgres backend in Phase 3.
+Writes to output/snapshots/{YYYY-MM-DD}/{hotel_id}_{ota}_{job_id}.json,
+plus a per-job summary at output/snapshots/{YYYY-MM-DD}/summary_{job_id}.json.
+
+The legacy `{hotel_id}[_{ota_suffix}].json` filename is still supported
+for callers that don't supply a job_id (e.g. one-off standalone usage).
+
+This module is the adapter layer that will grow a Postgres backend in
+Phase 5.
 """
 import json
 from datetime import date, datetime, timezone
@@ -20,29 +26,60 @@ def _day_dir(scrape_date: str | date | None = None) -> Path:
     return d
 
 
-def save_hotel_snapshot(hotel_id: str, data: dict,
-                        scrape_date: str | date | None = None,
-                        ota_suffix: str = "") -> Path:
-    """Write one hotel's daily snapshot to disk. Returns the file path.
+def _snapshot_filename(hotel_id: str, *, job_id: str | None, ota: str | None,
+                       ota_suffix: str) -> str:
+    if job_id:
+        ota_part = f"_{ota}" if ota else ""
+        return f"{hotel_id}{ota_part}_{job_id}.json"
+    return f"{hotel_id}{ota_suffix}.json"
 
-    ota_suffix (e.g. "_branddotcom") keeps parallel scrapes from colliding.
-    """
+
+def save_hotel_snapshot(
+    hotel_id: str,
+    data: dict,
+    scrape_date: str | date | None = None,
+    *,
+    job_id: str | None = None,
+    ota: str | None = None,
+    ota_suffix: str = "",
+) -> Path:
+    """Write one hotel's snapshot to disk. Returns the file path."""
     d = _day_dir(scrape_date)
-    p = d / f"{hotel_id}{ota_suffix}.json"
+    p = d / _snapshot_filename(hotel_id, job_id=job_id, ota=ota, ota_suffix=ota_suffix)
     p.write_text(json.dumps(data, indent=2, default=str))
     return p
 
+
+def save_job_summary(job, results: list[dict],
+                     scrape_date: str | date | None = None) -> Path:
+    """Write a summary index for one Job. Returns the file path."""
+    d = _day_dir(scrape_date)
+    payload = {
+        "scrape_date": d.name,
+        "job_id": job.job_id,
+        "started_at": job.created_at,
+        "completed_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "hotels_scraped": sum(1 for r in results if r.get("status") == "ok"),
+        "hotels_failed": sum(1 for r in results if r.get("status") != "ok"),
+        "spec": job.to_dict(),
+        "results": results,
+    }
+    p = d / f"summary_{job.job_id}.json"
+    p.write_text(json.dumps(payload, indent=2, default=str))
+    return p
+
+
+# --- Legacy helpers kept for one-off CLIs and Phase-2 compatibility ------
 
 def save_daily_summary(results: list[dict],
                        started_at: str | None = None,
                        scrape_date: str | date | None = None,
                        ota_suffix: str = "") -> Path:
-    """Write the daily summary index."""
     d = _day_dir(scrape_date)
     summary = {
         "scrape_date": d.name,
         "started_at": started_at,
-        "completed_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "completed_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "hotels_scraped": sum(1 for r in results if r.get("status") == "ok"),
         "hotels_failed": sum(1 for r in results if r.get("status") != "ok"),
         "results": results,
@@ -63,7 +100,6 @@ def load_hotel_snapshot(hotel_id: str,
 
 
 def list_snapshot_dates() -> list[str]:
-    """Return sorted list of YYYY-MM-DD strings for which snapshots exist."""
     if not SNAPSHOTS_DIR.exists():
         return []
     return sorted(
