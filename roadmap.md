@@ -147,21 +147,36 @@ Each phase = one commit on `refactor/dockerize-stack`.
   edits persist to the host.
 - `refresh-accessible` deferred — not load-bearing yet.
 
-### Phase 5 — Postgres write path ⏳ (next session)
+### Phase 5 — Postgres rates ingest ✅
 
-**Blocked on:** user-supplied schema for rate cells / competitors.
+Shipped in seven sub-phases on `feat/phase5-postgres-ingest`:
 
-- `scraper/db/connection.py` already in place (Phase 3). Extend with
-  `writer.py` (takes a snapshot dict, writes to tables) and
-  `models.py`.
-- Schema lives in `db/migrations/` (hand-rolled SQL for now; Alembic
-  later if views multiply).
-- `snapshot.py` dual-writes to DB when `WRITE_DB=1` (env flag already
-  wired into `docker-compose.yml`). JSON stays on as parity during
-  cutover, then becomes the archive format.
-- `run_job.py` migrates from `fcntl.flock` to Postgres advisory locks
-  once the DB is authoritative.
-- Extend Metabase dashboards with rate-trend tiles once data lands.
+- **5.1** `db/migrate.sh` + `schema_migrations` tracking table.
+- **5.2** Schema v3 DDL: `sources`, `hotels`, `subject_hotels`,
+  `compset_members`, `stay_parameters`, `scrape_runs`,
+  `scrape_run_hotels`, `raw_payloads`, `rates_current`,
+  `rate_observations` (partitioned on `observation_date`).
+- **5.3** Custom `postgres/Dockerfile` + `postgresql.conf` preload
+  `pg_cron`; a plpgsql function + monthly schedule auto-roll
+  rate_observations partitions (zero user intervention).
+- **5.4** `scraper/subject_hotels.json` carries richer subject
+  metadata; `0008` + `0009` seed the DB with both
+  `subscription_id` (hotels.json key) and `hotelinfo_id` (shared
+  across OTAs). `admin.py` gains subject prompts, `list-subjects`,
+  and `close-compset-member`.
+- **5.5** `scraper/db/ingest.py` UPSERTs the whole snapshot graph
+  inside one transaction per hotel — `scrape_runs`, `raw_payloads`,
+  `hotels`, `compset_members` (UNION, no auto-close),
+  `rate_observations`, `rates_current`. `scraper/db/pricing.py`
+  computes `all_in_price` with Decimal-safe guards for non-USD,
+  missing shops, and ambiguous `_incl` flags. `snapshot.py` calls
+  ingest after the JSON write; `WRITE_DB=1` is the default.
+- **5.6** Views `v_rates_latest`, `v_rate_trend`,
+  `v_subject_vs_compset`; `scraper/reconcile.py` backfills from
+  on-disk JSON for any `--date` / `--since`/`--until`.
+- **5.7** Metabase "Rate intelligence" dashboard with 5 cards
+  (compset median, booking curve, rate changes, compset coverage,
+  run health).
 
 ### Phase 6 — Metabase dashboards ✅ / Jobs API ⏳
 
