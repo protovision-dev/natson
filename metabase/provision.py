@@ -602,7 +602,7 @@ WITH base AS (
 demand AS (
     SELECT DISTINCT
         g.stay_date,
-        '2 Market demand' AS competitor,
+        '2 Demand' AS competitor,
         CASE WHEN g.market_demand_pct IS NULL
              THEN NULL
              ELSE round(g.market_demand_pct)::text || '%'
