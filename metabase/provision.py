@@ -100,9 +100,12 @@ def ensure_admin_and_db() -> tuple[str, int]:
     Later: authenticates with the admin creds and ensures the DB exists.
     """
     props = requests.get(f"{MB_URL}/api/session/properties", timeout=10).json()
+    # Metabase keeps the setup-token value around even after the UI is set up;
+    # the authoritative "has setup happened yet?" flag is `has-user-setup`.
+    already_set_up = bool(props.get("has-user-setup"))
     setup_token = props.get("setup-token")
 
-    if setup_token:
+    if not already_set_up and setup_token:
         if not ADMIN_PASSWORD:
             raise RuntimeError("METABASE_ADMIN_PASSWORD not set — cannot run first-time setup")
         print(f"[mb] first-time setup (token present)")
@@ -328,7 +331,9 @@ def build_dashboards(s: requests.Session, db_id: int) -> None:
 
     active_id = upsert_dashboard(
         s, "Active scrapes",
-        "Live view of jobs currently running — refresh the page to poll."
+        "Live view of jobs currently running. Open with #refresh=30 in the URL "
+        "for automatic 30-second polling (already baked into the link printed "
+        "by provision.py)."
     )
     set_dashboard_cards(s, active_id, [
         {"card_id": c_count,      "row": 0, "col": 0,  "size_x": 4,  "size_y": 3},
@@ -370,7 +375,8 @@ def build_dashboards(s: requests.Session, db_id: int) -> None:
     hist_id = upsert_dashboard(
         s, "Scrape history",
         "Volume, durations, and outcomes over time. "
-        "Combine with 'Active scrapes' for a full operational picture."
+        "Combine with 'Active scrapes' for a full operational picture. "
+        "Open with #refresh=60 in the URL to poll every minute."
     )
     set_dashboard_cards(s, hist_id, [
         {"card_id": c_by_state,    "row": 0,  "col": 0,  "size_x": 6,  "size_y": 6},
@@ -380,10 +386,14 @@ def build_dashboards(s: requests.Session, db_id: int) -> None:
     ])
 
     # Print user-facing URLs relative to the host (3010 publishes the port).
+    # #refresh=N tells Metabase to auto-poll every N seconds — so these
+    # links are "live" dashboards, not a one-shot snapshot.
     host_url = MB_URL.replace("http://metabase:3000", "http://localhost:3010")
     print()
-    print(f"[mb] Active scrapes → {host_url}/dashboard/{active_id}")
-    print(f"[mb] Scrape history → {host_url}/dashboard/{hist_id}")
+    print(f"[mb] Active scrapes (live, polls 30s) → "
+          f"{host_url}/dashboard/{active_id}#refresh=30")
+    print(f"[mb] Scrape history (live, polls 60s) → "
+          f"{host_url}/dashboard/{hist_id}#refresh=60")
 
 
 def main() -> int:
