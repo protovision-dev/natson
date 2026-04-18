@@ -560,11 +560,7 @@ _RATE_GRID_SQL = """
 SELECT
     stay_date,
     CASE WHEN is_own THEN '▶ ' || competitor_name ELSE competitor_name END AS competitor,
-    rate_value,
-    is_own,
-    is_available,
-    market_demand_pct,
-    message
+    rate_value
 FROM v_rate_grid_latest
 WHERE source_code = '{source}'
   AND subject_code = {{{{subject}}}}
@@ -620,18 +616,18 @@ def _build_rate_grid_dashboard(s, db_id: int, source: str) -> int:
     card_params   = [_subject_parameter()]
     template_tags = _subject_template_tag()
 
-    # Rate grid — Metabase pivots native-query results via the
-    # "pivot" display + pivot_table.column_split.  `values` is the
-    # column Metabase will aggregate (sum of 1 row per cell = itself).
+    # Rate grid — Metabase's full "pivot table" viz is restricted to
+    # query-builder questions.  The regular "table" viz supports a
+    # lightweight pivot on native queries via table.pivot + pivot_column
+    # + cell_column.  The query returns exactly (stay_date, competitor,
+    # rate_value); Metabase lays them out as rows × columns × cells.
     c_grid = upsert_card(
         s, db_id, f"{label} rate grid — by subject", grid_sql,
-        display="pivot",
+        display="table",
         visualization_settings={
-            "pivot_table.column_split": {
-                "rows":    [["field", "stay_date",  {"base-type": "type/Date"}]],
-                "columns": [["field", "competitor", {"base-type": "type/Text"}]],
-                "values":  [["field", "rate_value", {"base-type": "type/Decimal"}]],
-            },
+            "table.pivot":         True,
+            "table.pivot_column":  "competitor",
+            "table.cell_column":   "rate_value",
         },
         template_tags=template_tags,
         parameters=card_params,
