@@ -529,9 +529,8 @@ def build_dashboards(s: requests.Session, db_id: int) -> None:
         {"card_id": c_run_health,  "row": 14, "col": 12, "size_x": 12, "size_y": 7},
     ])
 
-    # --- Per-OTA rate grid dashboards (Lighthouse-style) ---
-    booking_grid_id = _build_rate_grid_dashboard(s, db_id, "booking")
-    brand_grid_id   = _build_rate_grid_dashboard(s, db_id, "brand")
+    # --- Unified Rate grid (Lighthouse-style; Subject + Source + LOS filters) ---
+    rate_grid_id = _build_rate_grid_dashboard(s, db_id)
 
     # Print user-facing URLs relative to the host (3010 publishes the port).
     # #refresh=N tells Metabase to auto-poll every N seconds — so these
@@ -544,10 +543,8 @@ def build_dashboards(s: requests.Session, db_id: int) -> None:
           f"{host_url}/dashboard/{hist_id}#refresh=60")
     print(f"[mb] Rate intelligence (polls 300s)     → "
           f"{host_url}/dashboard/{rate_id}#refresh=300")
-    print(f"[mb] Booking rate grid                  → "
-          f"{host_url}/dashboard/{booking_grid_id}")
-    print(f"[mb] Brand rate grid                    → "
-          f"{host_url}/dashboard/{brand_grid_id}")
+    print(f"[mb] Rate grid (Subject × Source × LOS) → "
+          f"{host_url}/dashboard/{rate_grid_id}")
 
 
 # ---------- Per-OTA rate-grid dashboards ----------
@@ -573,18 +570,23 @@ SUBJECT_CODES = [
 #
 # All cells are TEXT so numeric rates (e.g. "$55") and percentages
 # ("74%") can share the column without Metabase coercing types.
+#   All rate-grid SQL below uses THREE Metabase template variables:
+#       {{subject}}   — subject_hotels.internal_code (from SUBJECT_CODES list)
+#       {{source}}    — sources.source_code: 'booking' or 'brand'
+#       {{los}}       — stay_parameters.los: 1, 7, 14, 28
+#   Wired to dashboard dropdowns in _build_rate_grid_dashboard().
+
 _RATE_GRID_SQL = """
 -- Three-column long form (stay_date, competitor, value) that Metabase
 -- pivots into a matrix.  Header sort keys '1 ' and '2 ' push the
 -- subject's own column first and market-demand second; all other
--- competitors sort alphabetically after.  Column widths are NOT fixed
--- — Metabase auto-distributes within the full-width card.
+-- competitors sort alphabetically after.
 --
 -- Collision handling: head+tail truncation is enough for 99% of names
 -- but a few compsets have two hotels whose names differ only in the
--- middle (e.g. two "WoodSpring ... Palm Beach" variants).  A window
--- function detects such collisions at query time and appends a 3-char
--- hotelinfo_id suffix only when needed — keeps the common case tight.
+-- middle (e.g. two "WoodSpring ... Palm Beach" variants).  A window-
+-- free subquery detects such collisions and appends a 3-char
+-- hotelinfo_id suffix only when needed.
 WITH raw AS (
     SELECT
         g.stay_date,
@@ -594,15 +596,12 @@ WITH raw AS (
         g.rate_value,
         g.message
     FROM v_rate_grid_latest g
-    WHERE g.source_code  = '{source}'
-      AND g.subject_code = {{{{subject}}}}
-      AND g.los          = 7
+    WHERE g.source_code  = {{source}}
+      AND g.subject_code = {{subject}}
+      AND g.los          = {{los}}
       AND g.persons      = 2
 ),
 dup_counts AS (
-    -- Two-step dedup: first pair unique (trimmed, full_name), then
-    -- count unique names per trimmed value.  Postgres doesn't support
-    -- COUNT(DISTINCT ...) OVER (...) directly.
     SELECT trimmed, count(*) AS dup_count
     FROM (
         SELECT DISTINCT _trim_name(r.competitor_name) AS trimmed,
@@ -645,9 +644,9 @@ demand AS (
              ELSE round(g.market_demand_pct)::text || '%'
         END AS value
     FROM v_rate_grid_latest g
-    WHERE g.source_code  = '{source}'
-      AND g.subject_code = {{{{subject}}}}
-      AND g.los          = 7
+    WHERE g.source_code  = {{source}}
+      AND g.subject_code = {{subject}}
+      AND g.los          = {{los}}
       AND g.persons      = 2
 )
 SELECT stay_date, competitor, value FROM base
@@ -659,24 +658,23 @@ ORDER BY stay_date, competitor
 _MARKET_DEMAND_SQL = """
 SELECT DISTINCT stay_date, market_demand_pct
 FROM v_rate_grid_latest
-WHERE source_code  = '{source}'
-  AND subject_code = {{{{subject}}}}
-  AND los          = 7
+WHERE source_code  = {{source}}
+  AND subject_code = {{subject}}
+  AND los          = {{los}}
   AND persons      = 2
   AND market_demand_pct IS NOT NULL
 ORDER BY stay_date
 """
 
-# Legend: maps the truncated pivot-column header shown in the rate grid
-# to the full hotel name + hotelinfo_id.  Same subject filter as the
-# grid — changing the Subject dropdown refreshes the legend too.
 _LEGEND_SQL = """
+-- Legend: truncated pivot-column header → full hotel name.  Same
+-- subject/source/los filters as the grid.
 WITH pairs AS (
     SELECT DISTINCT competitor_name, competitor_hotelinfo_id, is_own
     FROM v_rate_grid_latest
-    WHERE source_code  = '{source}'
-      AND subject_code = {{{{subject}}}}
-      AND los          = 7
+    WHERE source_code  = {{source}}
+      AND subject_code = {{subject}}
+      AND los          = {{los}}
       AND persons      = 2
 ),
 dup_counts AS (
@@ -705,7 +703,15 @@ ORDER BY p.is_own DESC, p.competitor_name
 # 0013_rate_grid_helper.sql.  Safe to call multiple times.
 
 
-def _subject_template_tag(default: str = "M6-ORL-WPAR") -> dict:
+# LOS values user runs scrapes against. Brand.com rejects LOS=28 via
+# /liveshop so scrapes at 28+brand will fail, but a dashboard user
+# still gets a clean "no data" view — not a crash.
+LOS_VALUES = [1, 7, 14, 28]
+SOURCE_VALUES = ["booking", "brand"]
+
+
+def _template_tags() -> dict:
+    """Three template variables the rate-grid cards share."""
     return {
         "subject": {
             "id": "subject-tag",
@@ -714,42 +720,115 @@ def _subject_template_tag(default: str = "M6-ORL-WPAR") -> dict:
             "type": "text",
             "widget-type": "string/=",
             "required": True,
-            "default": default,
-        }
+            "default": SUBJECT_CODES[0],
+        },
+        "source": {
+            "id": "source-tag",
+            "name": "source",
+            "display-name": "Source",
+            "type": "text",
+            "widget-type": "string/=",
+            "required": True,
+            "default": SOURCE_VALUES[0],
+        },
+        "los": {
+            "id": "los-tag",
+            "name": "los",
+            "display-name": "LOS",
+            "type": "number",
+            "widget-type": "number/=",
+            "required": True,
+            "default": "7",
+        },
     }
 
 
-def _subject_parameter(default: str = "M6-ORL-WPAR") -> dict:
-    # Card-level parameter — matches the dashboard filter type so
-    # Metabase routes the selected value into the template tag.
-    return {
-        "id":     "subject-param",
-        "name":   "Subject",
-        "slug":   "subject",
-        "type":   "string/=",
-        "target": ["variable", ["template-tag", "subject"]],
-        "default": default,
-    }
+def _card_parameters() -> list[dict]:
+    """Card-level parameters that must match the dashboard filter types
+    so selections flow from filter → card template-tag."""
+    return [
+        {"id": "subject-param", "name": "Subject", "slug": "subject",
+         "type": "string/=", "target": ["variable", ["template-tag", "subject"]],
+         "default": SUBJECT_CODES[0]},
+        {"id": "source-param",  "name": "Source",  "slug": "source",
+         "type": "string/=", "target": ["variable", ["template-tag", "source"]],
+         "default": SOURCE_VALUES[0]},
+        {"id": "los-param",     "name": "LOS",     "slug": "los",
+         "type": "number/=", "target": ["variable", ["template-tag", "los"]],
+         "default": 7},
+    ]
 
 
-def _build_rate_grid_dashboard(s, db_id: int, source: str) -> int:
-    """Build one dashboard ('<Source> rate grid') with a subject filter,
-    a market-demand strip, and the pivoted rate grid."""
-    label = source.capitalize()
+def _dashboard_parameters() -> list[dict]:
+    """Three dropdown filters on the unified Rate grid dashboard."""
+    return [
+        {
+            "id": "dash-subject", "name": "Subject", "slug": "subject",
+            "type": "string/=", "sectionId": "string",
+            "default": SUBJECT_CODES[0],
+            "values_query_type": "list", "values_source_type": "static-list",
+            "values_source_config": {"values": [[c] for c in SUBJECT_CODES]},
+        },
+        {
+            "id": "dash-source", "name": "Source", "slug": "source",
+            "type": "string/=", "sectionId": "string",
+            "default": SOURCE_VALUES[0],
+            "values_query_type": "list", "values_source_type": "static-list",
+            "values_source_config": {"values": [[c] for c in SOURCE_VALUES]},
+        },
+        {
+            "id": "dash-los", "name": "LOS", "slug": "los",
+            "type": "number/=", "sectionId": "number",
+            "default": 7,
+            "values_query_type": "list", "values_source_type": "static-list",
+            "values_source_config": {"values": [[v] for v in LOS_VALUES]},
+        },
+    ]
 
-    grid_sql   = _RATE_GRID_SQL.format(source=source)
-    demand_sql = _MARKET_DEMAND_SQL.format(source=source)
 
-    card_params   = [_subject_parameter()]
-    template_tags = _subject_template_tag()
+def _delete_dashboard_by_name(s: requests.Session, name: str) -> None:
+    """Remove an obsolete dashboard.  Metabase archives rather than
+    hard-deletes (soft-delete via PUT archived=true)."""
+    d = _find_by_name(s, "/api/dashboard", name)
+    if d and not d.get("archived"):
+        try:
+            _put(s, f"/api/dashboard/{d['id']}", {"archived": True})
+            print(f"[mb] dashboard archived: {name} (id={d['id']})")
+        except Exception as e:
+            print(f"[mb] could not archive dashboard {name}: {e}")
 
-    # Rate grid — table.pivot renders a matrix on native SQL.
-    # Widths trimmed ~30% per user feedback (stay_date 80, data cols 70).
-    # Metabase CE has a known limitation: per-column widths on pivoted
-    # native queries aren't always respected — real stretch-to-card-width
-    # is forced via site-wide custom CSS applied in ensure_custom_css().
+
+def _delete_card_by_name(s: requests.Session, name: str) -> None:
+    c = _find_by_name(s, "/api/card", name)
+    if c and not c.get("archived"):
+        try:
+            _put(s, f"/api/card/{c['id']}", {"archived": True})
+            print(f"[mb] card archived: {name} (id={c['id']})")
+        except Exception as e:
+            print(f"[mb] could not archive card {name}: {e}")
+
+
+def _build_rate_grid_dashboard(s, db_id: int) -> int:
+    """Build ONE unified 'Rate grid' dashboard with three filter dropdowns
+    (Subject / Source / LOS).  Replaces the earlier per-source dashboards."""
+
+    # Scrub old per-source versions so they don't linger in the sidebar.
+    for old in ("Booking rate grid", "Brand rate grid"):
+        _delete_dashboard_by_name(s, old)
+    for old_card in (
+        "Booking rate grid — by subject",      "Brand rate grid — by subject",
+        "Booking market demand — by subject",  "Brand market demand — by subject",
+        "Booking competitor legend — by subject",
+        "Brand competitor legend — by subject",
+    ):
+        _delete_card_by_name(s, old_card)
+
+    template_tags = _template_tags()
+    card_params   = _card_parameters()
+
     c_grid = upsert_card(
-        s, db_id, f"{label} rate grid — by subject", grid_sql,
+        s, db_id, "Rate grid — filtered",
+        _RATE_GRID_SQL,
         display="table",
         visualization_settings={
             "table.pivot":         True,
@@ -762,7 +841,8 @@ def _build_rate_grid_dashboard(s, db_id: int, source: str) -> int:
     )
 
     c_demand = upsert_card(
-        s, db_id, f"{label} market demand — by subject", demand_sql,
+        s, db_id, "Market demand — filtered",
+        _MARKET_DEMAND_SQL,
         display="bar",
         visualization_settings={
             "graph.dimensions": ["stay_date"],
@@ -773,58 +853,47 @@ def _build_rate_grid_dashboard(s, db_id: int, source: str) -> int:
     )
 
     c_legend = upsert_card(
-        s, db_id, f"{label} competitor legend — by subject",
-        _LEGEND_SQL.format(source=source),
+        s, db_id, "Competitor legend — filtered",
+        _LEGEND_SQL,
         display="table",
         visualization_settings={},
         template_tags=template_tags,
         parameters=card_params,
     )
 
-    # Dashboard-level Subject filter.
-    # - type: string/= — 0.60's canonical dropdown filter type
-    # - sectionId: string — places it in the String section in the filter UI
-    # - values_query_type: list — force dropdown (not search/text input)
-    # - values_source_type: static-list — our hardcoded 10 codes
-    # - values_source_config.values: list-of-lists ([[val]], not [val]) —
-    #   each inner array is [value] or [value, label]; Metabase requires
-    #   this nested form even for single-column values.
-    dash_params = [{
-        "id":      "dash-subject",
-        "name":    "Subject",
-        "slug":    "subject",
-        "type":    "string/=",
-        "sectionId": "string",
-        "default": SUBJECT_CODES[0],
-        "values_query_type":   "list",
-        "values_source_type":  "static-list",
-        "values_source_config": {
-            "values": [[c] for c in SUBJECT_CODES],
-        },
-    }]
     dash_id = upsert_dashboard(
-        s, f"{label} rate grid",
-        f"Lighthouse-style rate grid for {source}.com.  Rows = stay date, "
-        f"columns = (subject + market demand + compset), cells = nightly "
-        f"rate in USD.  Pick a portfolio property from the Subject filter. "
-        f"LOS=7, persons=2 — edit the card SQL to slice other stay combos.",
-        parameters=dash_params,
+        s, "Rate grid",
+        "Lighthouse-style rate grid.  Rows = stay date; columns = "
+        "(subject ▶ + Demand + compset); cells = nightly rate in USD.  "
+        "Filter the dashboard by Subject / Source / LOS to slice any "
+        "combination — e.g. 'M6-ORL-WPAR on booking at LOS=7'.  "
+        "Note: Brand.com rejects LOS=28 refreshes (Lighthouse API limit), "
+        "so brand at 28 will show empty.",
+        parameters=_dashboard_parameters(),
     )
 
-    # Wire the dashboard Subject filter → each card's {{subject}} template tag.
-    param_mapping = [{
-        "parameter_id": "dash-subject",
-        "card_id":      None,   # filled in per dashcard below
-        "target":       ["variable", ["template-tag", "subject"]],
-    }]
+    # Wire dashboard filters → card template tags.
+    def pm(param_id: str, tag_name: str, card_id: int) -> dict:
+        return {
+            "parameter_id": param_id,
+            "card_id":      card_id,
+            "target":       ["variable", ["template-tag", tag_name]],
+        }
+
+    def mappings_for(card_id: int) -> list[dict]:
+        return [
+            pm("dash-subject", "subject", card_id),
+            pm("dash-source",  "source",  card_id),
+            pm("dash-los",     "los",     card_id),
+        ]
 
     layout = [
         {"card_id": c_demand, "row": 0,  "col": 0, "size_x": 24, "size_y": 4,
-         "parameter_mappings": [{**param_mapping[0], "card_id": c_demand}]},
+         "parameter_mappings": mappings_for(c_demand)},
         {"card_id": c_grid,   "row": 4,  "col": 0, "size_x": 24, "size_y": 14,
-         "parameter_mappings": [{**param_mapping[0], "card_id": c_grid}]},
+         "parameter_mappings": mappings_for(c_grid)},
         {"card_id": c_legend, "row": 18, "col": 0, "size_x": 24, "size_y": 7,
-         "parameter_mappings": [{**param_mapping[0], "card_id": c_legend}]},
+         "parameter_mappings": mappings_for(c_legend)},
     ]
     set_dashboard_cards(s, dash_id, layout)
     return dash_id
