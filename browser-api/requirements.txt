@@ -1,0 +1,5 @@
+camoufox[geoip]
+playwright
+fastapi
+uvicorn[standard]
+pydantic>=2

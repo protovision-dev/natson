@@ -1,0 +1,21 @@
+{
+  "defaults": {
+    "compset_id": 1,
+    "los": 7,
+    "persons": 2,
+    "ota": "bookingdotcom",
+    "months_ahead": 2
+  },
+  "hotels": [
+    {"hotel_id": "345062", "name": "Extended Stay America Select Suites - Austin - Northwest - Lakeline Mall"},
+    {"hotel_id": "345069", "name": "Extended Stay America Suites - Clearwater - Carillon Park"},
+    {"hotel_id": "344406", "name": "HomeTowne Studios by Red Roof Atlanta - Lawrenceville"},
+    {"hotel_id": "276780", "name": "Motel 6-Orlando, FL - International Dr"},
+    {"hotel_id": "276782", "name": "Motel 6-Orlando, FL - Winter Park"},
+    {"hotel_id": "276792", "name": "Studio 6 Extended Stay - Austin, TX - Midtown"},
+    {"hotel_id": "276784", "name": "Studio 6 Extended Stay - Greensboro, NC"},
+    {"hotel_id": "303035", "name": "Studio 6 Extended Stay - Roswell, GA - Atlanta"},
+    {"hotel_id": "273870", "name": "Studio 6 Extended Stay - Richmond, VA - I-64 West"},
+    {"hotel_id": "273872", "name": "Studio 6 Extended Stay - West Palm Beach, FL"}
+  ]
+}
