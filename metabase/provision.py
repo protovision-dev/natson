@@ -667,6 +667,40 @@ WHERE source_code  = '{source}'
 ORDER BY stay_date
 """
 
+# Legend: maps the truncated pivot-column header shown in the rate grid
+# to the full hotel name + hotelinfo_id.  Same subject filter as the
+# grid — changing the Subject dropdown refreshes the legend too.
+_LEGEND_SQL = """
+WITH pairs AS (
+    SELECT DISTINCT competitor_name, competitor_hotelinfo_id, is_own
+    FROM v_rate_grid_latest
+    WHERE source_code  = '{source}'
+      AND subject_code = {{{{subject}}}}
+      AND los          = 7
+      AND persons      = 2
+),
+dup_counts AS (
+    SELECT trimmed, count(*) AS dup_count
+    FROM (SELECT DISTINCT _trim_name(competitor_name) AS trimmed, competitor_name
+          FROM pairs) s
+    GROUP BY trimmed
+)
+SELECT
+    CASE
+        WHEN p.is_own THEN '▶ ' || _trim_name(p.competitor_name)
+        WHEN dc.dup_count > 1
+            THEN _trim_name(p.competitor_name)
+                 || ' #' || right(p.competitor_hotelinfo_id, 3)
+        ELSE _trim_name(p.competitor_name)
+    END AS column_header,
+    p.competitor_name           AS full_name,
+    p.competitor_hotelinfo_id   AS hotelinfo_id,
+    CASE WHEN p.is_own THEN 'subject' ELSE 'compset' END AS role
+FROM pairs p
+JOIN dup_counts dc ON dc.trimmed = _trim_name(p.competitor_name)
+ORDER BY p.is_own DESC, p.competitor_name
+"""
+
 # Helper Postgres function that trims long hotel names.  Created by
 # 0013_rate_grid_helper.sql.  Safe to call multiple times.
 
@@ -738,6 +772,15 @@ def _build_rate_grid_dashboard(s, db_id: int, source: str) -> int:
         parameters=card_params,
     )
 
+    c_legend = upsert_card(
+        s, db_id, f"{label} competitor legend — by subject",
+        _LEGEND_SQL.format(source=source),
+        display="table",
+        visualization_settings={},
+        template_tags=template_tags,
+        parameters=card_params,
+    )
+
     # Dashboard-level Subject filter.
     # - type: string/= — 0.60's canonical dropdown filter type
     # - sectionId: string — places it in the String section in the filter UI
@@ -776,10 +819,12 @@ def _build_rate_grid_dashboard(s, db_id: int, source: str) -> int:
     }]
 
     layout = [
-        {"card_id": c_demand, "row": 0, "col": 0, "size_x": 24, "size_y": 4,
+        {"card_id": c_demand, "row": 0,  "col": 0, "size_x": 24, "size_y": 4,
          "parameter_mappings": [{**param_mapping[0], "card_id": c_demand}]},
-        {"card_id": c_grid,   "row": 4, "col": 0, "size_x": 24, "size_y": 14,
+        {"card_id": c_grid,   "row": 4,  "col": 0, "size_x": 24, "size_y": 14,
          "parameter_mappings": [{**param_mapping[0], "card_id": c_grid}]},
+        {"card_id": c_legend, "row": 18, "col": 0, "size_x": 24, "size_y": 7,
+         "parameter_mappings": [{**param_mapping[0], "card_id": c_legend}]},
     ]
     set_dashboard_cards(s, dash_id, layout)
     return dash_id
