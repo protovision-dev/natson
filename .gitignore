@@ -1,0 +1,31 @@
+# --- Secrets / credentials ---
+.env
+.env.*
+!.env.example
+acess.txt
+smartproxy.txt
+firecrawl.txt
+
+# --- Scratch / legacy ---
+target.txt
+target*.txt
+
+# --- Python ---
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+scraper/.venv/
+.venv/
+*.egg-info/
+
+# --- Scraper runtime data ---
+scraper/output/
+
+# --- OS junk ---
+.DS_Store
+*.log
+
+# --- Editor/IDE ---
+.vscode/
+.idea/

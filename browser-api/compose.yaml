@@ -1,0 +1,25 @@
+services:
+  browser-api:
+    build: .
+    container_name: natson-browser-api
+    ports:
+      - "8765:8765"
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      MAX_CONCURRENCY: "${MAX_CONCURRENCY:-4}"
+      # Override these if you need a different fingerprint.
+      DEFAULT_UA: "${DEFAULT_UA:-Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:140.0) Gecko/20100101 Firefox/140.0}"
+      DEFAULT_OS: "${DEFAULT_OS:-macos}"
+      DEFAULT_LOCALE: "${DEFAULT_LOCALE:-en-US}"
+      # Launch-level proxy (required for Firefox/Camoufox; per-request proxy
+      # doesn't work reliably there). All contexts route through this proxy.
+      PROXY_SERVER: "${PROXY_SERVER}"
+      PROXY_USERNAME: "${PROXY_USERNAME}"
+      PROXY_PASSWORD: "${PROXY_PASSWORD}"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8765/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
