@@ -43,8 +43,10 @@ services:
       WRITE_DB: "0"
     volumes:
       - session_vol:/app/output:rw
-      # Bind-mount hotels.json so admin.py's edits persist on the host.
+      # Bind-mount hotels.json + subject_hotels.json so admin.py edits
+      # persist on the host (and git).
       - ./scraper/hotels.json:/app/hotels.json:rw
+      - ./scraper/subject_hotels.json:/app/subject_hotels.json:rw
     networks:
       - natson
 
