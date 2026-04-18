@@ -149,34 +149,53 @@ Each phase = one commit on `refactor/dockerize-stack`.
 
 ### Phase 5 — Postgres rates ingest ✅
 
-Shipped in seven sub-phases on `feat/phase5-postgres-ingest`:
+Shipped across 21 commits on `feat/phase5-postgres-ingest`:
 
-- **5.1** `db/migrate.sh` + `schema_migrations` tracking table.
-- **5.2** Schema v3 DDL: `sources`, `hotels`, `subject_hotels`,
-  `compset_members`, `stay_parameters`, `scrape_runs`,
-  `scrape_run_hotels`, `raw_payloads`, `rates_current`,
-  `rate_observations` (partitioned on `observation_date`).
-- **5.3** Custom `postgres/Dockerfile` + `postgresql.conf` preload
-  `pg_cron`; a plpgsql function + monthly schedule auto-roll
-  rate_observations partitions (zero user intervention).
-- **5.4** `scraper/subject_hotels.json` carries richer subject
-  metadata; `0008` + `0009` seed the DB with both
-  `subscription_id` (hotels.json key) and `hotelinfo_id` (shared
-  across OTAs). `admin.py` gains subject prompts, `list-subjects`,
-  and `close-compset-member`.
-- **5.5** `scraper/db/ingest.py` UPSERTs the whole snapshot graph
-  inside one transaction per hotel — `scrape_runs`, `raw_payloads`,
-  `hotels`, `compset_members` (UNION, no auto-close),
-  `rate_observations`, `rates_current`. `scraper/db/pricing.py`
-  computes `all_in_price` with Decimal-safe guards for non-USD,
-  missing shops, and ambiguous `_incl` flags. `snapshot.py` calls
-  ingest after the JSON write; `WRITE_DB=1` is the default.
-- **5.6** Views `v_rates_latest`, `v_rate_trend`,
-  `v_subject_vs_compset`; `scraper/reconcile.py` backfills from
-  on-disk JSON for any `--date` / `--since`/`--until`.
-- **5.7** Metabase "Rate intelligence" dashboard with 5 cards
-  (compset median, booking curve, rate changes, compset coverage,
-  run health).
+**Core ingest (5.1-5.6)**
+- `db/migrate.sh` + `schema_migrations` tracking.
+- Schema v3: `sources`, `hotels`, `subject_hotels`, `compset_members`,
+  `stay_parameters`, `scrape_runs`, `scrape_run_hotels`, `raw_payloads`,
+  `rates_current`, `rate_observations` (monthly-partitioned).
+- Custom `postgres` image + `pg_cron` auto-rolling partition job
+  (zero user intervention).
+- `subject_hotels.json` carries subscription_id + hotelinfo_id; seeded
+  via `0008_seed_subjects.sql` + corrective `0009`.
+- `scraper/db/ingest.py` — one-transaction-per-hotel UPSERT graph,
+  Decimal-safe `all_in_price`, UNION compset (no auto-close),
+  default `WRITE_DB=1` on scraper service.
+- Views `v_rates_latest`, `v_rate_trend`, `v_subject_vs_compset`;
+  `scraper/reconcile.py` backfills from on-disk JSON.
+- `admin.py close-compset-member` for manual compset-drift handling.
+
+**Dashboards (5.7-5.8, plus unified rewrite)**
+- "Rate intelligence" dashboard with 5 cards.
+- Unified "Rate grid" dashboard with three dropdown filters:
+  Subject (10 portfolio codes) × Source (booking | brand) × LOS
+  (1 | 7 | 14 | 28). Replaces separate per-OTA dashboards.
+- Competitor legend card maps truncated pivot headers to full hotel
+  names, plus `our_last_scrape` + `ota_last_shopped` timestamps
+  (via `v_rate_grid_latest` extended with observation_ts + extract_datetime).
+
+**Safety-net commits**
+- Session lock: `scraper/jobs/scrape_lock.py` + login_daemon defer
+  logic (writes `output/locks/active/{job_id}.lock`; daemon refuses
+  to rotate session while a scrape is holding in-memory cookies,
+  with a 5-min panic floor for organic TTL expiry).
+- `prior_rate_value` reads from `rate_observations` where
+  `observation_date < today` — avoids same-day-retry false negatives
+  on `changed_from_prior`.
+- Hourly `pg_cron` sweeper (`0014_stale_scrape_jobs_sweep.sql`) that
+  demotes phantom `state='running'` rows to `failed` after 2 h.
+
+**Live data (2026-04-18)**
+- ~38,700 `rate_observations` rows across {booking, brand} × {LOS 1,
+  7, 28} × 10 hotels × 91 stay dates, fully dual-written JSON + DB.
+- Confirmed parallel-safe: dual concurrent booking + brand jobs at
+  LOS=1 ran cleanly to completion (+ LOS=28 when both OTAs support
+  it; brand.com rejects LOS=28 via Lighthouse's API).
+- Backup taken at
+  `backups/natson-pre-dual-scrape-20260418-105020.dump` before the
+  dual-scrape experiment.
 
 ### Phase 6 — Metabase dashboards ✅ / Jobs API ⏳
 

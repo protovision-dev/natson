@@ -29,3 +29,4 @@ scraper/output/
 # --- Editor/IDE ---
 .vscode/
 .idea/
+backups/
