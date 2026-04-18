@@ -29,7 +29,7 @@ All five live in one `docker-compose.yml` at the repo root, sharing a
 | 2 — Compose + Postgres + Metabase scaffold | ✅ | five-service stack, `docker compose up -d` brings it healthy |
 | 3 — Flexible `run_job.py` + Job abstraction | ✅ | every URL param is a flag; concurrent-safe via fcntl locks |
 | 4 — Login daemon + portfolio admin | ✅ | `scraper-login` auto-refreshes `session.json`; `admin.py` manages `hotels.json` |
-| 5 — Postgres write path | ⏳ | schema from user; DAL goes in `scraper/db/` |
+| 5 — Postgres rates ingest | ✅ | `scraper/db/ingest.py` dual-writes snapshots; `db/migrate.sh` runs SQL migrations; pg_cron auto-rolls monthly partitions |
 | 6 — Metabase dashboards + optional Jobs API | ✅ (dashboards) / ⏳ (Jobs API) | `metabase/provision.py` stands up the admin + DB + two dashboards idempotently |
 
 ## Quick start
@@ -108,6 +108,39 @@ wait
 - `--no-refresh` — skip the refresh, fetch whatever Lighthouse has (warm path).
 - `--refresh-only` — trigger + poll, skip fetch (stage fresh data for a later job).
 
+## Database migrations
+
+Schema evolves via `db/migrate.sh`:
+
+```bash
+./db/migrate.sh status    # show applied + pending
+./db/migrate.sh up        # apply everything pending
+./db/migrate.sh list      # list migration files
+```
+
+Each file in `db/migrations/NNNN_*.sql` runs in a single transaction,
+idempotently. Applied versions are tracked in `schema_migrations`.
+
+Partition maintenance is automated: `pg_cron` inside Postgres runs
+`ensure_rate_obs_partitions(9)` on the 1st of every month. No external
+cron or user action needed.
+
+## Backfilling Postgres from JSON
+
+If the DB gets out of sync with the authoritative on-disk snapshots
+(e.g. `WRITE_DB=0` for a while, or a new schema needs replaying),
+`reconcile.py` walks the JSON tree and re-ingests:
+
+```bash
+docker compose run --rm scraper python reconcile.py --date 2026-04-18
+docker compose run --rm scraper python reconcile.py --since 2026-04-01 --until 2026-04-18
+docker compose run --rm scraper python reconcile.py --date 2026-04-18 --hotel 345062 --ota branddotcom
+docker compose run --rm scraper python reconcile.py --date 2026-04-18 --dry-run
+```
+
+Ingest is idempotent (UPSERT on the natural key + observation_date),
+so re-runs are safe.
+
 ## Monitoring scrapes
 
 Every job writes its state to **Postgres** (and a mirror `status.json`
@@ -143,6 +176,10 @@ connection, and builds two dashboards:
   http://localhost:3010/dashboard/3#refresh=60
   — jobs by state (pie), completed scrapes by OTA (bar), jobs per day
   (stacked line), and the last-100 table.
+- **Rate intelligence** (polls every 5 min):
+  http://localhost:3010/dashboard/4#refresh=300
+  — own rate vs compset median, booking curve per stay_date, rate
+  changes, compset coverage, and scrape-run health.
 
 `#refresh=N` is a Metabase URL hash that makes the dashboard poll its
 underlying queries every N seconds, so you get a live view without
