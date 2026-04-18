@@ -291,14 +291,14 @@ LIMIT 100
 """.strip()
 
 RECENT_SQL_BY_STATE = """
-SELECT state, COUNT(*) AS jobs
+SELECT state, COUNT(*)::int AS jobs
 FROM scrape_jobs
 GROUP BY state
 ORDER BY jobs DESC
 """.strip()
 
 RECENT_SQL_BY_OTA = """
-SELECT ota, COUNT(*) AS jobs, ROUND(AVG(duration_seconds))::INT AS avg_duration_s
+SELECT ota, COUNT(*)::int AS jobs
 FROM scrape_jobs
 WHERE state = 'completed' AND ota IS NOT NULL
 GROUP BY ota
@@ -308,10 +308,9 @@ ORDER BY jobs DESC
 RECENT_SQL_PER_DAY = """
 SELECT
     DATE_TRUNC('day', started_at)::date AS day,
-    state,
-    COUNT(*) AS jobs
+    COUNT(*)::int AS jobs
 FROM scrape_jobs
-GROUP BY 1, 2
+GROUP BY 1
 ORDER BY 1
 """.strip()
 
@@ -361,9 +360,8 @@ def build_dashboards(s: requests.Session, db_id: int) -> None:
         s, db_id, "Scrapes per day", RECENT_SQL_PER_DAY,
         display="line",
         visualization_settings={
-            "graph.dimensions": ["day", "state"],
+            "graph.dimensions": ["day"],
             "graph.metrics": ["jobs"],
-            "stackable.stack_type": "stacked",
         },
     )
     c_recent_tbl = upsert_card(
