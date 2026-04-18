@@ -1,0 +1,42 @@
+# Default parameters for every scrape job.
+# CLI flags on `run_job.py` override any of these per-invocation.
+# hotels.json is the separate subscription list (loaded by jobs/hotels.py).
+
+# --- URL parameters (sent to /rates/ and /liveshop) -------------------
+url_params:
+  ota: bookingdotcom
+  los: 7                # length of stay (nights)
+  persons: 2            # adults
+  compset_id: 1
+  mealtype: 0           # 0 = room only
+  membershiptype: 0     # 0 = public
+  platform: -1          # -1 = any (desktop + mobile)
+  roomtype: all
+  bar: true             # best-available rates
+  flexible: true        # include flex rates
+  rate_type: 0          # 0 = normal
+  meta: nested
+
+# --- Date window ------------------------------------------------------
+dates:
+  default: "rolling:2"   # current month + next N
+
+# --- Refresh behavior -------------------------------------------------
+refresh:
+  enabled: true          # default; CLI: --refresh / --no-refresh
+  poll_interval_s: 15
+  poll_timeout_s: 300
+  # Lighthouse /liveshop caps per-POST window at 31 days.
+  max_window_days: 31
+
+# --- Pacing -----------------------------------------------------------
+pacing:
+  polite_sleep_s: 0.25          # between individual API calls
+  jitter_months_s: [2, 6]       # [min, max] between months within a hotel
+  jitter_hotels_s: [5, 15]      # [min, max] between hotels within a job
+
+# --- Locking ----------------------------------------------------------
+locks:
+  # Per-(hotel_id, ota) exclusive lock prevents two concurrent jobs from
+  # contending on Lighthouse's brand-shop concurrency bucket.
+  lock_timeout_s: 900    # wait up to 15 min for a busy lock
