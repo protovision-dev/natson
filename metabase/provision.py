@@ -315,6 +315,90 @@ ORDER BY 1
 """.strip()
 
 
+# ---------- Rate intelligence cards (schema v3 facts) ----------
+
+RATE_SQL_RECENT_CHANGES = """
+SELECT
+    observation_date,
+    subject_code,
+    source_code,
+    competitor_name,
+    stay_date,
+    los,
+    prior_rate_value,
+    rate_value,
+    rate_delta
+FROM v_rate_trend
+WHERE changed_from_prior = TRUE
+  AND rate_delta IS NOT NULL
+ORDER BY observation_date DESC, abs(rate_delta) DESC
+LIMIT 100
+""".strip()
+
+RATE_SQL_BOOKING_CURVE = """
+-- Booking curve: rate_value over observation_date, for each stay_date.
+-- Filter to one subject + one source in Metabase to get a clean line.
+SELECT
+    observation_date,
+    stay_date,
+    source_code,
+    subject_code,
+    rate_value,
+    all_in_price
+FROM v_rate_trend
+WHERE subject_code = 'ESA-AUS-LAKE'
+  AND rate_value IS NOT NULL
+ORDER BY stay_date, observation_date
+""".strip()
+
+RATE_SQL_VS_COMPSET = """
+-- Own rate vs compset median across all future stay dates.
+SELECT
+    stay_date,
+    subject_code,
+    source_code,
+    own_rate,
+    median_rate,
+    min_rate,
+    max_rate,
+    delta_vs_median,
+    compset_size
+FROM v_subject_vs_compset
+ORDER BY subject_code, source_code, stay_date
+""".strip()
+
+RATE_SQL_COVERAGE = """
+-- Compset coverage heatmap: how many competitors have a rate on each
+-- stay_date for each subject, on today's scrape.
+SELECT
+    sh.internal_code        AS subject_code,
+    ro.stay_date,
+    COUNT(DISTINCT ro.competitor_hotel_pk) FILTER (WHERE ro.rate_value IS NOT NULL) AS competitors_with_rates
+FROM rate_observations ro
+JOIN subject_hotels sh USING (subject_hotel_id)
+WHERE ro.observation_date = CURRENT_DATE
+GROUP BY sh.internal_code, ro.stay_date
+ORDER BY sh.internal_code, ro.stay_date
+""".strip()
+
+RATE_SQL_RUN_HEALTH = """
+-- scrape_runs audit trail: per source per day, how many hotels
+-- succeeded and how long the refresh totaled.
+SELECT
+    sr.scrape_date,
+    s.source_code,
+    sr.status,
+    COUNT(srh.scrape_run_hotel_id) AS hotel_runs,
+    SUM(srh.rates_count)::INT      AS total_rates,
+    ROUND(AVG(srh.duration_s), 1)  AS avg_refresh_s
+FROM scrape_runs sr
+JOIN sources s ON s.source_id = sr.source_id
+LEFT JOIN scrape_run_hotels srh USING (scrape_run_id)
+GROUP BY sr.scrape_date, s.source_code, sr.status
+ORDER BY sr.scrape_date DESC, s.source_code
+""".strip()
+
+
 def build_dashboards(s: requests.Session, db_id: int) -> None:
     # --- Active ---
     c_count = upsert_card(
@@ -383,15 +467,66 @@ def build_dashboards(s: requests.Session, db_id: int) -> None:
         {"card_id": c_recent_tbl,  "row": 6,  "col": 0,  "size_x": 24, "size_y": 8},
     ])
 
+    # --- Rate intelligence (Phase 5: rates_current, rate_observations, views) ---
+    c_changes = upsert_card(
+        s, db_id, "Rate changes (last 100)", RATE_SQL_RECENT_CHANGES,
+        display="table",
+        visualization_settings={},
+    )
+    c_curve = upsert_card(
+        s, db_id, "Booking curve — ESA Austin Lakeline",
+        RATE_SQL_BOOKING_CURVE,
+        display="line",
+        visualization_settings={
+            "graph.dimensions": ["observation_date", "stay_date"],
+            "graph.metrics":    ["rate_value"],
+        },
+    )
+    c_vs_compset = upsert_card(
+        s, db_id, "Own rate vs compset median", RATE_SQL_VS_COMPSET,
+        display="line",
+        visualization_settings={
+            "graph.dimensions": ["stay_date"],
+            "graph.metrics":    ["own_rate", "median_rate"],
+        },
+    )
+    c_coverage = upsert_card(
+        s, db_id, "Compset coverage by subject × stay date (today)",
+        RATE_SQL_COVERAGE,
+        display="table",
+        visualization_settings={},
+    )
+    c_run_health = upsert_card(
+        s, db_id, "Scrape run health", RATE_SQL_RUN_HEALTH,
+        display="table",
+        visualization_settings={},
+    )
+
+    rate_id = upsert_dashboard(
+        s, "Rate intelligence",
+        "Rate data captured by the ingest pipeline.  Open with #refresh=300 "
+        "in the URL to poll every 5 minutes (rate data changes slowly vs. job "
+        "state). Filter cards by subject_code / source_code to drill down."
+    )
+    set_dashboard_cards(s, rate_id, [
+        {"card_id": c_vs_compset,  "row": 0,  "col": 0,  "size_x": 12, "size_y": 7},
+        {"card_id": c_curve,       "row": 0,  "col": 12, "size_x": 12, "size_y": 7},
+        {"card_id": c_changes,     "row": 7,  "col": 0,  "size_x": 24, "size_y": 7},
+        {"card_id": c_coverage,    "row": 14, "col": 0,  "size_x": 12, "size_y": 7},
+        {"card_id": c_run_health,  "row": 14, "col": 12, "size_x": 12, "size_y": 7},
+    ])
+
     # Print user-facing URLs relative to the host (3010 publishes the port).
     # #refresh=N tells Metabase to auto-poll every N seconds — so these
     # links are "live" dashboards, not a one-shot snapshot.
     host_url = MB_URL.replace("http://metabase:3000", "http://localhost:3010")
     print()
-    print(f"[mb] Active scrapes (live, polls 30s) → "
+    print(f"[mb] Active scrapes (live, polls 30s)   → "
           f"{host_url}/dashboard/{active_id}#refresh=30")
-    print(f"[mb] Scrape history (live, polls 60s) → "
+    print(f"[mb] Scrape history (live, polls 60s)   → "
           f"{host_url}/dashboard/{hist_id}#refresh=60")
+    print(f"[mb] Rate intelligence (polls 300s)     → "
+          f"{host_url}/dashboard/{rate_id}#refresh=300")
 
 
 def main() -> int:
