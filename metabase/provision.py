@@ -641,6 +641,7 @@ def _subject_template_tag(default: str = "M6-ORL-WPAR") -> dict:
             "name": "subject",
             "display-name": "Subject",
             "type": "text",
+            "widget-type": "string/=",
             "required": True,
             "default": default,
         }
@@ -648,11 +649,13 @@ def _subject_template_tag(default: str = "M6-ORL-WPAR") -> dict:
 
 
 def _subject_parameter(default: str = "M6-ORL-WPAR") -> dict:
+    # Card-level parameter — matches the dashboard filter type so
+    # Metabase routes the selected value into the template tag.
     return {
-        "id": "subject-param",
-        "name": "Subject",
-        "slug": "subject",
-        "type": "category",
+        "id":     "subject-param",
+        "name":   "Subject",
+        "slug":   "subject",
+        "type":   "string/=",
         "target": ["variable", ["template-tag", "subject"]],
         "default": default,
     }
@@ -669,11 +672,12 @@ def _build_rate_grid_dashboard(s, db_id: int, source: str) -> int:
     card_params   = [_subject_parameter()]
     template_tags = _subject_template_tag()
 
-    # Rate grid — Metabase's full pivot viz is restricted to query-builder
-    # questions; table.pivot works on native queries. No column_widths
-    # set so the grid auto-fills the card width (à la Lighthouse UI).
-    # Name-column width is kept sane by _trim_name() in SQL (22-char cap +
-    # ellipsis); full names are still in the hotels table for hover/tooltip.
+    # Rate grid — table.pivot renders a matrix on native SQL.
+    # column_widths: [stay_date] + 15 × 100 pixels = covers compset sizes
+    # from 6 to 15 competitors.  Total ≈ 1600 px → fills a full-width
+    # dashboard card on a typical laptop.  When a compset is smaller,
+    # Metabase truncates the array naturally; when larger, horizontal
+    # scroll appears.  _trim_name() at 22 chars keeps headers tight.
     c_grid = upsert_card(
         s, db_id, f"{label} rate grid — by subject", grid_sql,
         display="table",
@@ -681,6 +685,7 @@ def _build_rate_grid_dashboard(s, db_id: int, source: str) -> int:
             "table.pivot":         True,
             "table.pivot_column":  "competitor",
             "table.cell_column":   "value",
+            "column_widths":       [110] + [100] * 15,
         },
         template_tags=template_tags,
         parameters=card_params,
@@ -697,18 +702,25 @@ def _build_rate_grid_dashboard(s, db_id: int, source: str) -> int:
         parameters=card_params,
     )
 
-    # Dashboard-level Subject filter: static-list dropdown of the 10
-    # known portfolio codes.  Drives the {{subject}} template var in
-    # both cards via parameter_mappings below.
+    # Dashboard-level Subject filter.
+    # - type: string/= — 0.60's canonical dropdown filter type
+    # - sectionId: string — places it in the String section in the filter UI
+    # - values_query_type: list — force dropdown (not search/text input)
+    # - values_source_type: static-list — our hardcoded 10 codes
+    # - values_source_config.values: list-of-lists ([[val]], not [val]) —
+    #   each inner array is [value] or [value, label]; Metabase requires
+    #   this nested form even for single-column values.
     dash_params = [{
         "id":      "dash-subject",
         "name":    "Subject",
         "slug":    "subject",
-        "type":    "category",
+        "type":    "string/=",
+        "sectionId": "string",
         "default": SUBJECT_CODES[0],
-        "values_source_type":   "static-list",
+        "values_query_type":   "list",
+        "values_source_type":  "static-list",
         "values_source_config": {
-            "values": list(SUBJECT_CODES),
+            "values": [[c] for c in SUBJECT_CODES],
         },
     }]
     dash_id = upsert_dashboard(
