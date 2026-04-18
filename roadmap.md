@@ -135,12 +135,19 @@ Each phase = one commit on `refactor/dockerize-stack`.
 - `snapshot.py` dual-writes to DB when `WRITE_DB=1`.
 - `run_job.py` migrates from flock to Postgres advisory locks.
 
-### Phase 6 — Metabase dashboards + optional Jobs API
+### Phase 6 — Metabase dashboards ✅ / Jobs API ⏳
 
-- Starter `metabase/dashboards.json`.
-- Optional FastAPI sidecar (`scraper/api/server.py`) with
-  `POST /jobs` → shells to `run_job.py` — deferred until Metabase
-  needs to trigger runs.
+- `metabase/provision.py` — idempotent bootstrap that runs Metabase's
+  first-time setup (admin + Postgres connection) or re-auths if
+  already set up, then creates/updates cards and lays out two
+  dashboards via the REST API.
+- Dashboard "Active scrapes" — scalar count + per-job progress table
+  from `active_scrapes` view.
+- Dashboard "Scrape history" — jobs-by-state pie, completed-by-OTA
+  bar, per-day stacked line, and 100-row history table.
+- Still deferred: FastAPI `POST /jobs` sidecar that shells to
+  `run_job.py`. Only worth building once Metabase (or another UI)
+  needs to trigger runs programmatically.
 
 ## Verification recipe (after Phase 3)
 
