@@ -4,20 +4,37 @@ Living spec for turning the Lighthouse rate scraper into a small enterprise
 BI app: fully containerized, flexible job-driven scraping, concurrent runs,
 Postgres persistence, Metabase visualization.
 
-## Current state (2026-04-17)
+## Current state (end of 2026-04-17)
 
-- 10 portfolio hotels ("subscriptions" in Lighthouse terms) — only these
-  can drive `/rates/` and `/liveshop` calls. The 71 "accessible" hotels in
-  `scraper/output/accessible_hotels.json` appear as compset competitors
-  inside portfolio scrapes; they are read-only siblings, not independently
-  driveable.
-- Working daily workflow: `login.py` → `scrape.py` (with or without
-  refresh), writes JSON snapshots to
-  `scraper/output/snapshots/{date}/{hotel_id}[_{ota}].json`.
-- `browser-api/` service handles login (Camoufox in Docker on port 8765).
-  Everything else uses session cookies + plain HTTP.
-- Two OTAs proven: `bookingdotcom` (7,007 cells) and `branddotcom`
-  (7,735 cells) both captured cleanly today.
+**On `refactor/dockerize-stack` — 7 commits, phases 1-4 done + Phase 6
+dashboards landed ahead of schedule. Only Phase 5 (full rates-schema
+DAL) remains.**
+
+- **Stack is live via `docker compose up -d`** — five services healthy:
+  browser-api (8765), scraper (idle / invoked per job), scraper-login
+  (auto-refreshes `session.json`), postgres 16, metabase (3010).
+- **10 portfolio hotels** ("subscriptions" in Lighthouse terms) — only
+  these can drive `/rates/` and `/liveshop` calls. The 71 "accessible"
+  hotels in `scraper/output/accessible_hotels.json` are compset
+  competitors observed inside portfolio scrapes; read-only siblings.
+- **Every URL variable is a CLI flag** on `run_job.py`. Defaults in
+  `scraper/scraper.config.yml`. `--hotels` / `--dates` / `--ota` /
+  `--los` / `--persons` / `--refresh` (+ `--no-refresh`,
+  `--refresh-only`) / `--compset-id` / `--mealtype` /
+  `--membershiptype` / `--platform` / `--roomtype` / `--bar` /
+  `--flexible` / `--rate-type` / `--meta`.
+- **Concurrent jobs work.** Each `docker compose run --rm scraper ...`
+  spawns an ephemeral container; per-(hotel, ota) fcntl locks in
+  `output/locks/` keep them from stepping on each other.
+- **Live Metabase dashboards** at
+  http://localhost:3010/dashboard/2#refresh=30 (Active scrapes) and
+  http://localhost:3010/dashboard/3#refresh=60 (Scrape history).
+  `#refresh=N` makes Metabase auto-poll Postgres every N seconds.
+- **Two OTAs proven:** `bookingdotcom` (7,007 cells) and `branddotcom`
+  (7,735 cells) captured cleanly earlier in the day.
+- **End-of-day smoke:** portfolio × 2026-05 × `--no-refresh` ran
+  clean in 179s — 10/10 hotels, 2,635 rate cells, row persisted in
+  `scrape_jobs`, visible in both dashboards.
 
 ## Key design decisions
 
@@ -78,18 +95,20 @@ Each phase = one commit on `refactor/dockerize-stack`.
 - This document rewritten.
 - `git init -b main`, initial commit, branch `refactor/dockerize-stack`.
 
-### Phase 2 — Root compose + Postgres + Metabase scaffold
+### Phase 2 — Root compose + Postgres + Metabase scaffold ✅
 
 - `docker-compose.yml` at repo root with services: `browser-api`,
   `scraper`, `scraper-login`, `postgres` (16), `metabase`.
 - `scraper/Dockerfile` (python:3.12-slim, sleep infinity default CMD).
 - `scraper/requirements.txt` pinned.
 - `.env.example` at root (Postgres + Metabase creds, Lighthouse user/pass).
-- Named volumes: `pg_data`, `metabase_data`, `session_vol`,
-  `scraper_output`.
-- `db/init/00_extensions.sql` placeholder.
+- Named volumes: `pg_data`, `metabase_data`, `session_vol`.
+- `db/init/00_extensions.sql` + `db/init/01_metabase_db.sh` (creates
+  the `metabase` DB + role inside the main Postgres instance).
+- `METABASE_PORT` defaults to 3010 (3000 collides with open-webui in
+  common local setups).
 
-### Phase 3 — Config file + Job abstraction + `run_job` CLI + Metabase-visible job state
+### Phase 3 — Config file + Job abstraction + `run_job` CLI + Metabase-visible job state ✅
 
 - `scraper/scraper.config.yml` — all URL-param defaults + pacing.
 - `scraper/jobs/` module — `spec.py` (Job dataclass),
@@ -128,12 +147,21 @@ Each phase = one commit on `refactor/dockerize-stack`.
   edits persist to the host.
 - `refresh-accessible` deferred — not load-bearing yet.
 
-### Phase 5 — Postgres write path
+### Phase 5 — Postgres write path ⏳ (next session)
 
-- `scraper/db/{connection,writer,models}.py`.
-- Schema (user-supplied) goes in `db/migrations/`.
-- `snapshot.py` dual-writes to DB when `WRITE_DB=1`.
-- `run_job.py` migrates from flock to Postgres advisory locks.
+**Blocked on:** user-supplied schema for rate cells / competitors.
+
+- `scraper/db/connection.py` already in place (Phase 3). Extend with
+  `writer.py` (takes a snapshot dict, writes to tables) and
+  `models.py`.
+- Schema lives in `db/migrations/` (hand-rolled SQL for now; Alembic
+  later if views multiply).
+- `snapshot.py` dual-writes to DB when `WRITE_DB=1` (env flag already
+  wired into `docker-compose.yml`). JSON stays on as parity during
+  cutover, then becomes the archive format.
+- `run_job.py` migrates from `fcntl.flock` to Postgres advisory locks
+  once the DB is authoritative.
+- Extend Metabase dashboards with rate-trend tiles once data lands.
 
 ### Phase 6 — Metabase dashboards ✅ / Jobs API ⏳
 
@@ -165,9 +193,41 @@ After Phase 5:
 
 ## Open items
 
-- Metabase's own state DB: separate DB inside the main Postgres
-  instance (recommended) vs internal H2.
-- Migrations tool: hand-rolled SQL + `migrate.sh` for now; Alembic
-  later once views multiply.
-- Who edits `hotels.json` long-term? Phase 4 CLI is fine for devs; a
-  UI is a Phase 6+ problem.
+- **Phase 5 schema from user** — the rate-cells / competitors /
+  refreshes shape. Until it lands, snapshots stay as JSON.
+- **Migrations tool** — hand-rolled SQL + a `migrate.sh` for now;
+  consider Alembic once views multiply.
+- **`hotels.json` editing UX** — Phase 4 CLI works for devs; a UI
+  is a post-Phase-6 problem.
+- **Jobs API** — deferred. Only worth building when Metabase (or
+  another UI) needs to trigger runs programmatically.
+- **Portfolio expansion 10 → 50+** — requires adding Lighthouse
+  subscriptions (business/ops task), not code.
+
+## Picking up tomorrow AM
+
+1. **Bring the stack up** if it isn't already:
+   ```
+   cd /Users/dfriestedt/Github/natsonhotels
+   docker compose up -d
+   ```
+2. Confirm session is fresh (the login daemon should have kept it so):
+   ```
+   docker compose run --rm scraper python admin.py session
+   ```
+3. Live dashboards:
+   - http://localhost:3010/dashboard/2#refresh=30 (Active scrapes)
+   - http://localhost:3010/dashboard/3#refresh=60 (Scrape history)
+4. **Phase 5 kickoff** — user shares rates-schema SQL, then:
+   - drop the schema into `db/init/03_rates_schema.sql` (or a new
+     `db/migrations/` dir if we pick Alembic)
+   - implement `scraper/db/writer.py` using the shape
+   - turn on `WRITE_DB=1` in `.env` and re-run a test scrape to see
+     rows land alongside the JSON snapshot.
+5. Once rates are in Postgres, extend the Metabase dashboards with
+   rate-trend and parity tiles — `metabase/provision.py` is
+   idempotent, so re-running it applies tile edits in place.
+
+Branch state: on `refactor/dockerize-stack` with 7 commits since
+`main`. Do NOT squash yet — each phase's commit message captures
+context you'll want when reviewing.
