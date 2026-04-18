@@ -667,15 +667,27 @@ ORDER BY stay_date
 """
 
 _LEGEND_SQL = """
--- Legend: truncated pivot-column header → full hotel name.  Same
--- subject/source/los filters as the grid.
+-- Legend: truncated pivot-column header → full hotel name + when we
+-- last observed this rate.  Same subject/source/los filters as the grid.
+--
+-- "Our last scrape": max observation_ts across the filtered window
+--   — tells you when OUR pipeline last wrote a row for this competitor.
+-- "OTA last shopped": max extract_datetime from Lighthouse
+--   — tells you when LIGHTHOUSE last scraped the OTA for this rate.
+-- Both formatted in America/New_York for easy human reading.
 WITH pairs AS (
-    SELECT DISTINCT competitor_name, competitor_hotelinfo_id, is_own
+    SELECT
+        competitor_name,
+        competitor_hotelinfo_id,
+        bool_or(is_own)             AS is_own,
+        MAX(observation_ts)         AS last_scrape_ts,
+        MAX(extract_datetime)       AS last_ota_extract_ts
     FROM v_rate_grid_latest
     WHERE source_code  = {{source}}
       AND subject_code = {{subject}}
       AND los          = {{los}}
       AND persons      = 2
+    GROUP BY competitor_name, competitor_hotelinfo_id
 ),
 dup_counts AS (
     SELECT trimmed, count(*) AS dup_count
@@ -690,10 +702,14 @@ SELECT
             THEN _trim_name(p.competitor_name)
                  || ' #' || right(p.competitor_hotelinfo_id, 3)
         ELSE _trim_name(p.competitor_name)
-    END AS column_header,
-    p.competitor_name           AS full_name,
-    p.competitor_hotelinfo_id   AS hotelinfo_id,
-    CASE WHEN p.is_own THEN 'subject' ELSE 'compset' END AS role
+    END                            AS column_header,
+    p.competitor_name              AS full_name,
+    p.competitor_hotelinfo_id      AS hotelinfo_id,
+    CASE WHEN p.is_own THEN 'subject' ELSE 'compset' END AS role,
+    to_char(p.last_scrape_ts       AT TIME ZONE 'America/New_York',
+            'Mon DD, HH12:MI AM')  AS our_last_scrape,
+    to_char(p.last_ota_extract_ts  AT TIME ZONE 'America/New_York',
+            'Mon DD, HH12:MI AM')  AS ota_last_shopped
 FROM pairs p
 JOIN dup_counts dc ON dc.trimmed = _trim_name(p.competitor_name)
 ORDER BY p.is_own DESC, p.competitor_name
