@@ -28,7 +28,7 @@ All five live in one `docker-compose.yml` at the repo root, sharing a
 | 1 — Git bootstrap + secret hygiene | ✅ | `.gitignore`, `.env.example`, compose reads creds from `.env` |
 | 2 — Compose + Postgres + Metabase scaffold | ✅ | five-service stack, `docker compose up -d` brings it healthy |
 | 3 — Flexible `run_job.py` + Job abstraction | ✅ | every URL param is a flag; concurrent-safe via fcntl locks |
-| 4 — Login daemon + portfolio admin | ⏳ | `scraper-login` is sleeping today; admin CLI pending |
+| 4 — Login daemon + portfolio admin | ✅ | `scraper-login` auto-refreshes `session.json`; `admin.py` manages `hotels.json` |
 | 5 — Postgres write path | ⏳ | schema from user; DAL goes in `scraper/db/` |
 | 6 — Metabase dashboards + optional Jobs API | ⏳ | viz + (maybe) FastAPI trigger |
 
@@ -43,8 +43,10 @@ cp browser-api/.env.example browser-api/.env
 # 2. Bring up the stack
 docker compose up -d
 
-# 3. Seed the Lighthouse session (until Phase 4's login daemon lands)
-docker compose cp scraper/output/session.json scraper:/app/output/session.json
+# 3. Session lands automatically — the `scraper-login` daemon will log in
+#    via browser-api on first boot and keep session.json fresh (24h TTL,
+#    relogins when <2h remain). Check with:
+docker compose run --rm scraper python admin.py session
 
 # 4. Fire a scrape job
 docker compose run --rm scraper python run_job.py \
@@ -165,11 +167,25 @@ natsonhotels/
 - `scraper/scraper.config.yml` — default URL params + pacing. Committed.
 - `scraper/hotels.json` — portfolio subscriptions. Committed.
 
+## Portfolio admin
+
+`hotels.json` is bind-mounted so changes persist to the host (and git).
+
+```bash
+docker compose run --rm scraper python admin.py list
+docker compose run --rm scraper python admin.py add 409987 "New Studio 6 - Somewhere"
+docker compose run --rm scraper python admin.py remove 409987
+docker compose run --rm scraper python admin.py session
+```
+
+Only hotels listed here can drive `/rates/` + `/liveshop` — other
+hotelinfos appear as compset competitors inside a portfolio scrape.
+
 ## Troubleshooting
 
-- **`session.json missing`** — copy your last good session into the
-  `session_vol` volume (see Quick Start step 3). Phase 4's
-  `scraper-login` service will handle this automatically.
+- **`session.json missing` / scrape errors with 401** — check
+  `docker compose logs scraper-login`; the daemon re-logs in on every
+  tick. If LH_USER / LH_PASS aren't set in `.env`, login fails.
 - **`rate-limit flags active`** — Lighthouse reflects your own running
   refresh back as "concurrent monthshop" while it runs; not a block.
   See [`scraper/api.md`](./scraper/api.md) §4.

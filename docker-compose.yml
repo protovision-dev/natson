@@ -43,27 +43,31 @@ services:
       WRITE_DB: "0"
     volumes:
       - session_vol:/app/output:rw
+      # Bind-mount hotels.json so admin.py's edits persist on the host.
+      - ./scraper/hotels.json:/app/hotels.json:rw
     networks:
       - natson
 
   scraper-login:
-    # Same image as scraper; different entrypoint. Phase 4 will switch
-    # this to login_daemon.py; for now it's a placeholder that no-ops so
-    # `docker compose up` doesn't fail on a missing file.
+    # Keeps /app/output/session.json fresh; checks every ~15 min, re-logs
+    # in via browser-api when <2h remain on the 24h TTL.  Uses the same
+    # image as `scraper`.
     image: natson-scraper:latest
     container_name: natson-scraper-login
     restart: unless-stopped
     depends_on:
-      scraper:
-        condition: service_started
+      browser-api:
+        condition: service_healthy
     env_file:
       - .env
     environment:
       BROWSER_API: "http://browser-api:8765"
       OUT_DIR: "/app/output"
+      LOGIN_CHECK_INTERVAL_S: "${LOGIN_CHECK_INTERVAL_S:-900}"
+      LOGIN_MARGIN_S: "${LOGIN_MARGIN_S:-7200}"
     volumes:
       - session_vol:/app/output:rw
-    command: ["sleep", "infinity"]
+    command: ["python", "login_daemon.py"]
     networks:
       - natson
 

@@ -113,12 +113,20 @@ Each phase = one commit on `refactor/dockerize-stack`.
   transition so Metabase can render live progress across concurrent
   jobs. Falls back silently if Postgres is unreachable.
 
-### Phase 4 — Login daemon + portfolio admin
+### Phase 4 — Login daemon + portfolio admin ✅
 
-- `scraper/login_daemon.py`: check session TTL every 15 min, re-login
-  when <2h left.
-- `scraper/admin.py`: `list-subscriptions`, `add-subscription`,
-  `remove-subscription`, `refresh-accessible`.
+- `scraper/login.py` refactored into a reusable `login()` function
+  that writes `logged_in_at` + `session_ttl_s` in the session file.
+- `scraper/login_daemon.py`: check session age every
+  `LOGIN_CHECK_INTERVAL_S` (default 900s); re-login when remaining TTL
+  drops below `LOGIN_MARGIN_S` (default 7200s) or when the file is
+  missing/unreadable. Runs as the `scraper-login` compose service with
+  `restart: unless-stopped`.
+- `scraper/admin.py`: subcommands `list`, `add <id> <name...>`,
+  `remove <id>`, `session` (shows TTL remaining).
+- `scraper/hotels.json` bind-mounted in the `scraper` service so admin
+  edits persist to the host.
+- `refresh-accessible` deferred — not load-bearing yet.
 
 ### Phase 5 — Postgres write path
 
