@@ -579,25 +579,62 @@ _RATE_GRID_SQL = """
 -- subject's own column first and market-demand second; all other
 -- competitors sort alphabetically after.  Column widths are NOT fixed
 -- — Metabase auto-distributes within the full-width card.
-WITH base AS (
+--
+-- Collision handling: head+tail truncation is enough for 99% of names
+-- but a few compsets have two hotels whose names differ only in the
+-- middle (e.g. two "WoodSpring ... Palm Beach" variants).  A window
+-- function detects such collisions at query time and appends a 3-char
+-- hotelinfo_id suffix only when needed — keeps the common case tight.
+WITH raw AS (
     SELECT
         g.stay_date,
-        CASE
-            WHEN g.is_own THEN '1 ▶ ' || _trim_name(g.competitor_name)
-            ELSE _trim_name(g.competitor_name)
-        END AS competitor,
-        CASE
-            WHEN g.rate_value IS NOT NULL AND g.rate_value > 0
-                THEN '$' || round(g.rate_value)::text
-            WHEN g.message = 'rates.soldout'   THEN 'Sold out'
-            WHEN g.message = 'general.missing' THEN '—'
-            ELSE '—'
-        END AS value
+        g.competitor_name,
+        g.competitor_hotelinfo_id,
+        g.is_own,
+        g.rate_value,
+        g.message
     FROM v_rate_grid_latest g
     WHERE g.source_code  = '{source}'
       AND g.subject_code = {{{{subject}}}}
       AND g.los          = 7
       AND g.persons      = 2
+),
+dup_counts AS (
+    -- Two-step dedup: first pair unique (trimmed, full_name), then
+    -- count unique names per trimmed value.  Postgres doesn't support
+    -- COUNT(DISTINCT ...) OVER (...) directly.
+    SELECT trimmed, count(*) AS dup_count
+    FROM (
+        SELECT DISTINCT _trim_name(r.competitor_name) AS trimmed,
+                        r.competitor_name
+        FROM raw r
+    ) distinct_pairs
+    GROUP BY trimmed
+),
+labeled AS (
+    SELECT r.*,
+           _trim_name(r.competitor_name) AS trimmed,
+           dc.dup_count
+    FROM raw r
+    JOIN dup_counts dc ON dc.trimmed = _trim_name(r.competitor_name)
+),
+base AS (
+    SELECT
+        stay_date,
+        CASE
+            WHEN is_own THEN '1 ▶ ' || trimmed
+            WHEN dup_count > 1
+                THEN trimmed || ' #' || right(competitor_hotelinfo_id, 3)
+            ELSE trimmed
+        END AS competitor,
+        CASE
+            WHEN rate_value IS NOT NULL AND rate_value > 0
+                THEN '$' || round(rate_value)::text
+            WHEN message = 'rates.soldout'   THEN 'Sold out'
+            WHEN message = 'general.missing' THEN '—'
+            ELSE '—'
+        END AS value
+    FROM labeled
 ),
 demand AS (
     SELECT DISTINCT
