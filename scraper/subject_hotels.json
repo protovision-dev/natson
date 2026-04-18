@@ -1,0 +1,105 @@
+{
+  "_comment": "Subject (portfolio) hotel metadata for the rate-tracking schema. One entry per hotel_id in hotels.json. Fields map to the subject_hotels table (db/migrations/0003_dimensions.sql): internal_code is your stable human-readable code; display_name is what shows in Metabase; brand is the OTA-agnostic chain name; city/state/country are for geo filters; lighthouse_compset_id is the compsetId query param used in the Lighthouse URL (currently 1 for all 10).",
+  "subjects": [
+    {
+      "hotel_id": "345062",
+      "internal_code": "ESA-AUS-LAKE",
+      "display_name": "ESA Austin Lakeline",
+      "city": "Austin",
+      "state": "TX",
+      "country": "US",
+      "brand": "Extended Stay America",
+      "lighthouse_compset_id": 1
+    },
+    {
+      "hotel_id": "345069",
+      "internal_code": "ESA-CLW-CARL",
+      "display_name": "ESA Clearwater Carillon",
+      "city": "Clearwater",
+      "state": "FL",
+      "country": "US",
+      "brand": "Extended Stay America",
+      "lighthouse_compset_id": 1
+    },
+    {
+      "hotel_id": "344406",
+      "internal_code": "HTS-ATL-LAWR",
+      "display_name": "HomeTowne Studios Atlanta Lawrenceville",
+      "city": "Lawrenceville",
+      "state": "GA",
+      "country": "US",
+      "brand": "HomeTowne Studios",
+      "lighthouse_compset_id": 1
+    },
+    {
+      "hotel_id": "276780",
+      "internal_code": "M6-ORL-INTL",
+      "display_name": "Motel 6 Orlando International Dr",
+      "city": "Orlando",
+      "state": "FL",
+      "country": "US",
+      "brand": "Motel 6",
+      "lighthouse_compset_id": 1
+    },
+    {
+      "hotel_id": "276782",
+      "internal_code": "M6-ORL-WPAR",
+      "display_name": "Motel 6 Orlando Winter Park",
+      "city": "Orlando",
+      "state": "FL",
+      "country": "US",
+      "brand": "Motel 6",
+      "lighthouse_compset_id": 1
+    },
+    {
+      "hotel_id": "276792",
+      "internal_code": "S6-AUS-MID",
+      "display_name": "Studio 6 Austin Midtown",
+      "city": "Austin",
+      "state": "TX",
+      "country": "US",
+      "brand": "Studio 6",
+      "lighthouse_compset_id": 1
+    },
+    {
+      "hotel_id": "276784",
+      "internal_code": "S6-GSO",
+      "display_name": "Studio 6 Greensboro",
+      "city": "Greensboro",
+      "state": "NC",
+      "country": "US",
+      "brand": "Studio 6",
+      "lighthouse_compset_id": 1
+    },
+    {
+      "hotel_id": "303035",
+      "internal_code": "S6-ATL-ROSW",
+      "display_name": "Studio 6 Atlanta Roswell",
+      "city": "Roswell",
+      "state": "GA",
+      "country": "US",
+      "brand": "Studio 6",
+      "lighthouse_compset_id": 1
+    },
+    {
+      "hotel_id": "273870",
+      "internal_code": "S6-RIC-I64W",
+      "display_name": "Studio 6 Richmond I-64 West",
+      "city": "Richmond",
+      "state": "VA",
+      "country": "US",
+      "brand": "Studio 6",
+      "lighthouse_compset_id": 1
+    },
+    {
+      "hotel_id": "273872",
+      "internal_code": "S6-WPB",
+      "display_name": "Studio 6 West Palm Beach",
+      "city": "West Palm Beach",
+      "state": "FL",
+      "country": "US",
+      "brand": "Studio 6",
+      "lighthouse_compset_id": 1
+    }
+  ]
+}
