@@ -30,7 +30,7 @@ All five live in one `docker-compose.yml` at the repo root, sharing a
 | 3 — Flexible `run_job.py` + Job abstraction | ✅ | every URL param is a flag; concurrent-safe via fcntl locks |
 | 4 — Login daemon + portfolio admin | ✅ | `scraper-login` auto-refreshes `session.json`; `admin.py` manages `hotels.json` |
 | 5 — Postgres write path | ⏳ | schema from user; DAL goes in `scraper/db/` |
-| 6 — Metabase dashboards + optional Jobs API | ⏳ | viz + (maybe) FastAPI trigger |
+| 6 — Metabase dashboards + optional Jobs API | ✅ (dashboards) / ⏳ (Jobs API) | `metabase/provision.py` stands up the admin + DB + two dashboards idempotently |
 
 ## Quick start
 
@@ -122,17 +122,28 @@ SELECT * FROM active_scrapes;
 SELECT * FROM recent_scrapes;
 ```
 
-**Metabase hook-up (one-time):**
+**Metabase hook-up (one-time, scripted):**
 
-1. Open http://localhost:3010 and finish the admin-account setup.
-2. Admin → Databases → Add: **PostgreSQL**
-   - Host: `postgres`  (the compose service name; Metabase is on the
-     same `natson` network)
-   - Port: `5432`
-   - Database name: `natson`
-   - Username / password: the values from your `.env`
-3. Build a dashboard on `active_scrapes` (live) + `recent_scrapes`
-   (history). Add filters on `ota`, `state`, `do_refresh`.
+```bash
+docker compose run --rm \
+    -v "$PWD/metabase:/metabase:ro" \
+    -e METABASE_URL=http://metabase:3000 \
+    scraper python /metabase/provision.py
+```
+
+That script is **idempotent** — it uses the first-boot setup token if
+Metabase hasn't been touched, else logs in with `METABASE_ADMIN_*`
+creds from `.env`. It creates the admin account, wires the Postgres
+connection, and builds two dashboards:
+
+- **Active scrapes** (http://localhost:3010/dashboard/2) — live count +
+  per-job progress table. Refresh the page to poll.
+- **Scrape history** (http://localhost:3010/dashboard/3) — jobs by
+  state (pie), completed scrapes by OTA (bar), jobs per day (stacked
+  line), and the last-100 table.
+
+Log in with the `METABASE_ADMIN_EMAIL` / `PASSWORD` from your `.env`
+(defaults `admin@natson.local` / placeholder — change for production).
 
 The filesystem fallback — `scraper/output/jobs/{job_id}/{status.json,
 spec.json, run.log}` — is still written on every run, so
