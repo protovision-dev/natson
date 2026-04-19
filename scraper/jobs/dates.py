@@ -10,11 +10,11 @@ Supported syntaxes:
 
 The parser returns a sorted, de-duplicated list[date].
 """
+
 from __future__ import annotations
 
 import re
 from datetime import date, timedelta
-
 
 _DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _MONTH = re.compile(r"^\d{4}-\d{2}$")

@@ -9,7 +9,6 @@ the main focus is on improving the Lighthouse pipeline.
 - `booking_direct.py` — scrape via browser-api + Smartproxy residential proxy
 - `firecrawl_may.py` — scrape via Firecrawl API (paid, handles bot detection)
 - `firecrawl_test.py` — small-batch Firecrawl test (10 URLs)
-- `probe_compset_search.py` — one-off Lighthouse compset search exploration
 - `discover_refresh.py` — one-off discovery of the Lighthouse Refresh button
 
 ## To re-activate

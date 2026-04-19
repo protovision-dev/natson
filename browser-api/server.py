@@ -23,11 +23,12 @@ Design notes:
     expires, httpOnly, secure, sameSite}. Consumers typically only need
     {name, value, domain, path}.
 """
+
 import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
 from camoufox import AsyncCamoufox
 from fastapi import FastAPI
@@ -57,7 +58,9 @@ async def lifespan(app: FastAPI):
             launch_proxy["username"] = os.environ["PROXY_USERNAME"]
         if os.environ.get("PROXY_PASSWORD"):
             launch_proxy["password"] = os.environ["PROXY_PASSWORD"]
-        log.info("launch-level proxy: %s (user=%s)", launch_proxy["server"], launch_proxy.get("username"))
+        log.info(
+            "launch-level proxy: %s (user=%s)", launch_proxy["server"], launch_proxy.get("username")
+        )
     cm_kwargs = dict(
         headless="virtual",
         humanize=False,
@@ -110,10 +113,11 @@ class Cookie(BaseModel):
 class Proxy(BaseModel):
     """Playwright per-context proxy config. Tunnels all traffic from that
     single browser context (so each /scrape call can route through its own IP)."""
-    server: str          # e.g. "http://gate.smartproxy.com:7000"
-    username: Optional[str] = None
-    password: Optional[str] = None
-    bypass: Optional[str] = None  # comma-sep host list that shouldn't be proxied
+
+    server: str  # e.g. "http://gate.smartproxy.com:7000"
+    username: str | None = None
+    password: str | None = None
+    bypass: str | None = None  # comma-sep host list that shouldn't be proxied
 
 
 # ---------- /health ----------
@@ -135,15 +139,15 @@ class ScrapeRequest(BaseModel):
     url: str
     waitFor: int = 0
     timeout: int = 60000
-    userAgent: Optional[str] = None
+    userAgent: str | None = None
     viewport: Viewport = Field(default_factory=Viewport)
-    cookies: Optional[list[Cookie]] = None
+    cookies: list[Cookie] | None = None
     scrollToBottom: bool = False
-    stabilitySelector: Optional[str] = None
+    stabilitySelector: str | None = None
     scrollMaxIterations: int = 40
     scrollStepDelayMs: int = 600
-    captureXhrUrlContains: Optional[list[str]] = None
-    proxy: Optional[Proxy] = None
+    captureXhrUrlContains: list[str] | None = None
+    proxy: Proxy | None = None
     # Accept self-signed / MITM certs — required when routing through a proxy
     # that inspects TLS or presents its own intermediate chain.
     ignoreHttpsErrors: bool = False
@@ -168,12 +172,13 @@ SCROLL_JS = """
 async def _scroll_until_stable(page, req: ScrapeRequest):
     last_count = -1
     stable_iters = 0
-    for i in range(req.scrollMaxIterations):
+    for _ in range(req.scrollMaxIterations):
         await page.evaluate(SCROLL_JS)
         await page.wait_for_timeout(req.scrollStepDelayMs)
         if req.stabilitySelector:
             count = await page.evaluate(
-                "(sel) => document.querySelectorAll(sel).length", req.stabilitySelector,
+                "(sel) => document.querySelectorAll(sel).length",
+                req.stabilitySelector,
             )
         else:
             count = await page.evaluate(
@@ -220,6 +225,7 @@ async def scrape(req: ScrapeRequest):
 
             xhrs: list[dict] = []
             if req.captureXhrUrlContains:
+
                 async def on_resp(r):
                     if not any(s in r.url for s in req.captureXhrUrlContains):
                         return
@@ -227,11 +233,15 @@ async def scrape(req: ScrapeRequest):
                         body = await r.text()
                     except Exception:
                         body = ""
-                    xhrs.append({
-                        "url": r.url, "status": r.status,
-                        "method": r.request.method,
-                        "body": body[:50000],
-                    })
+                    xhrs.append(
+                        {
+                            "url": r.url,
+                            "status": r.status,
+                            "method": r.request.method,
+                            "body": body[:50000],
+                        }
+                    )
+
                 page.on("response", on_resp)
 
             await page.goto(req.url, wait_until="domcontentloaded")
@@ -241,7 +251,10 @@ async def scrape(req: ScrapeRequest):
                 await _scroll_until_stable(page, req)
 
             html = await page.content()
-            result: dict[str, Any] = {"success": True, "data": {"rawHtml": html, "finalUrl": page.url}}
+            result: dict[str, Any] = {
+                "success": True,
+                "data": {"rawHtml": html, "finalUrl": page.url},
+            }
             if req.captureXhrUrlContains:
                 result["data"]["xhrs"] = xhrs
             return result
@@ -257,32 +270,38 @@ async def scrape(req: ScrapeRequest):
 
 class Step(BaseModel):
     action: Literal[
-        "goto", "fill", "press", "click",
-        "waitForSelector", "waitForURL", "waitForResponse", "waitForTimeout",
+        "goto",
+        "fill",
+        "press",
+        "click",
+        "waitForSelector",
+        "waitForURL",
+        "waitForResponse",
+        "waitForTimeout",
     ]
     # Common fields (not all actions use all fields; unused ones are ignored)
-    selector: Optional[str] = None
-    value: Optional[str] = None
-    key: Optional[str] = None
-    url: Optional[str] = None
-    urlContains: Optional[str] = None
-    status: Optional[int] = None
+    selector: str | None = None
+    value: str | None = None
+    key: str | None = None
+    url: str | None = None
+    urlContains: str | None = None
+    status: int | None = None
     timeout: int = 30000
-    ms: Optional[int] = None
+    ms: int | None = None
 
 
 class LoginRequest(BaseModel):
     url: str
     steps: list[Step]
-    userAgent: Optional[str] = None
+    userAgent: str | None = None
     viewport: Viewport = Field(default_factory=Viewport)
     # Pre-seed cookies into the context before navigating (for authenticated pages).
-    cookies: Optional[list[Cookie]] = None
+    cookies: list[Cookie] | None = None
     # Cookie filtering (applied to returned cookies, not the browser jar).
-    cookieDomains: Optional[list[str]] = None
-    cookieNames: Optional[list[str]] = None
+    cookieDomains: list[str] | None = None
+    cookieNames: list[str] | None = None
     # Optionally capture XHRs matching any substring during the flow.
-    captureXhrUrlContains: Optional[list[str]] = None
+    captureXhrUrlContains: list[str] | None = None
     # Wait for networkidle on initial page load (slower but safer for SPAs).
     initialWaitUntil: Literal["domcontentloaded", "networkidle", "load"] = "networkidle"
 
@@ -316,6 +335,7 @@ async def login(req: LoginRequest):
 
             xhrs: list[dict] = []
             if req.captureXhrUrlContains:
+
                 async def on_resp(r):
                     if not any(s in r.url for s in req.captureXhrUrlContains):
                         return
@@ -329,12 +349,16 @@ async def login(req: LoginRequest):
                             req_body = r.request.post_data
                         except Exception:
                             pass
-                    xhrs.append({
-                        "url": r.url, "status": r.status,
-                        "method": r.request.method,
-                        "request_body": req_body,
-                        "body": resp_body[:20000],
-                    })
+                    xhrs.append(
+                        {
+                            "url": r.url,
+                            "status": r.status,
+                            "method": r.request.method,
+                            "request_body": req_body,
+                            "body": resp_body[:20000],
+                        }
+                    )
+
                 page.on("response", on_resp)
 
             log.info("login goto %s", req.url)
@@ -364,12 +388,14 @@ async def login(req: LoginRequest):
                 elif a == "waitForResponse":
                     needle = step.urlContains or ""
                     status = step.status
+
                     def _pred(r, n=needle, s=status):
                         if n and n not in r.url:
                             return False
                         if s is not None and r.status != s:
                             return False
                         return True
+
                     async with page.expect_response(_pred, timeout=step.timeout):
                         pass
                 elif a == "waitForTimeout":
@@ -401,13 +427,14 @@ class ApiRequest(BaseModel):
     tokens, strict CORS/origin checks, or service workers). The browser issues
     the fetch(); we return the JSON body.
     """
+
     url: str
     method: Literal["GET", "POST", "PUT", "PATCH", "DELETE"] = "GET"
-    headers: Optional[dict[str, str]] = None
-    body: Optional[Any] = None  # JSON-serialized for POST/PUT/PATCH
-    cookies: Optional[list[Cookie]] = None
-    referer: Optional[str] = None
-    userAgent: Optional[str] = None
+    headers: dict[str, str] | None = None
+    body: Any | None = None  # JSON-serialized for POST/PUT/PATCH
+    cookies: list[Cookie] | None = None
+    referer: str | None = None
+    userAgent: str | None = None
     viewport: Viewport = Field(default_factory=Viewport)
     timeout: int = 60000
 

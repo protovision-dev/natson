@@ -5,6 +5,7 @@ required piece is missing, `get_conn()` returns None so callers can
 degrade gracefully.  Within docker-compose, POSTGRES_HOST defaults to
 the service name `postgres`.
 """
+
 from __future__ import annotations
 
 import os
@@ -17,7 +18,7 @@ except Exception:  # pragma: no cover
     psycopg = None
     Connection = None  # type: ignore
 
-_conn: "Connection | None" = None
+_conn: Connection | None = None
 _warned_once = False
 
 
@@ -36,7 +37,7 @@ def pg_configured() -> bool:
     return bool(psycopg and e["dbname"] and e["user"] and e["password"])
 
 
-def get_conn() -> "Connection | None":
+def get_conn() -> Connection | None:
     """Return a live connection or None if not configured / unreachable."""
     global _conn, _warned_once
     if _conn is not None and not _conn.closed:
@@ -49,9 +50,13 @@ def get_conn() -> "Connection | None":
     try:
         e = _env()
         _conn = psycopg.connect(
-            host=e["host"], port=e["port"],
-            dbname=e["dbname"], user=e["user"], password=e["password"],
-            autocommit=True, connect_timeout=5,
+            host=e["host"],
+            port=e["port"],
+            dbname=e["dbname"],
+            user=e["user"],
+            password=e["password"],
+            autocommit=True,
+            connect_timeout=5,
         )
         return _conn
     except Exception as ex:  # pragma: no cover

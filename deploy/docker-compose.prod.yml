@@ -1,0 +1,67 @@
+# Production overlay. Apply on top of the base compose file:
+#
+#   docker compose \
+#       -f docker-compose.yml \
+#       -f deploy/docker-compose.prod.yml \
+#       up -d
+#
+# What changes vs dev:
+#   - Caddy is added as the only public-facing service (80, 443).
+#   - web is pinned to NODE_ENV=production; BETTER_AUTH_URL points
+#     at https://$DOMAIN.
+#   - All services have `restart: always` so systemd-equivalent
+#     recovery is handled by docker.
+#
+# Note: `web` already binds its host port to 127.0.0.1 in the base
+# compose file, so the public IP never exposes it. No overlay needed
+# to drop the mapping.
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    container_name: natson-caddy
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp" # HTTP/3 (QUIC)
+    volumes:
+      # Paths resolve from the project root (natsonhotels/), not this
+      # overlay's directory, so use the repo-relative `deploy/` prefix.
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      DOMAIN: "${DOMAIN}"
+    depends_on:
+      web:
+        condition: service_healthy
+    networks:
+      - natson
+
+  web:
+    # No port override needed — the base file already binds web's
+    # published port to 127.0.0.1, so only the VPS itself (and Caddy,
+    # via the internal docker bridge) can reach it. The public IP
+    # exposes only Caddy's 80/443.
+    restart: always
+    environment:
+      NODE_ENV: production
+      BETTER_AUTH_URL: "https://${DOMAIN}"
+      NEXT_PUBLIC_BETTER_AUTH_URL: "https://${DOMAIN}"
+
+  jobs-api:
+    restart: always
+
+  browser-api:
+    restart: always
+
+  scraper-login:
+    restart: always
+
+  postgres:
+    restart: always
+
+volumes:
+  caddy_data:
+  caddy_config:

@@ -15,8 +15,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <div className="flex items-center gap-6">
           <span className="font-semibold tracking-tight">Natson Rate Intelligence</span>
           <nav className="flex gap-4 text-sm text-subtle">
-            <Link href="/grid" className="hover:text-ink">Rate grid</Link>
-            <Link href="/jobs" className="hover:text-ink">Jobs</Link>
+            <Link href="/grid" className="hover:text-ink">
+              Rate grid
+            </Link>
+            <Link href="/jobs" className="hover:text-ink">
+              Jobs
+            </Link>
           </nav>
         </div>
         <div className="text-xs text-subtle">{session.user.email}</div>

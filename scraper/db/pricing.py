@@ -21,6 +21,7 @@ Guards (schema v3 §6 + client doc cross-source goal):
   - String-form values like "0.00" → coerce via Decimal.
   - Negative tax → log, clamp to 0.
 """
+
 from __future__ import annotations
 
 import logging
@@ -62,9 +63,11 @@ def compute_all_in_price(cell: dict) -> Decimal | None:
 
     total = _clamp_nonneg(shop, "shop_value")
 
-    for tax_key, flag_key in (("city_tax",    "city_tax_incl"),
-                              ("vat",         "vat_incl"),
-                              ("other_taxes", "other_taxes_incl")):
+    for tax_key, flag_key in (
+        ("city_tax", "city_tax_incl"),
+        ("vat", "vat_incl"),
+        ("other_taxes", "other_taxes_incl"),
+    ):
         tax = _as_decimal(cell.get(tax_key))
         if tax is None or tax == 0:
             continue

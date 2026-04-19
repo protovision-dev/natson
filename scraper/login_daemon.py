@@ -22,26 +22,27 @@ Tunable via env:
     LOCK_STALE_AFTER_S       default 7200  (2h — abandoned lock threshold)
     PANIC_TTL_S              default 300   (5 min — force relogin floor)
 """
+
 from __future__ import annotations
 
 import os
 import random
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-from login import login, session_age_s, SESSION_TTL_S
-from config import SESSION_FILE, OUT_DIR
+from config import OUT_DIR, SESSION_FILE
 from jobs.scrape_lock import active_scrapes
+from login import SESSION_TTL_S, login, session_age_s
 
-CHECK_INTERVAL_S   = int(os.environ.get("LOGIN_CHECK_INTERVAL_S", "900"))
-MARGIN_S           = int(os.environ.get("LOGIN_MARGIN_S", "7200"))
+CHECK_INTERVAL_S = int(os.environ.get("LOGIN_CHECK_INTERVAL_S", "900"))
+MARGIN_S = int(os.environ.get("LOGIN_MARGIN_S", "7200"))
 LOCK_STALE_AFTER_S = int(os.environ.get("LOCK_STALE_AFTER_S", "7200"))
-PANIC_TTL_S        = int(os.environ.get("PANIC_TTL_S", "300"))
+PANIC_TTL_S = int(os.environ.get("PANIC_TTL_S", "300"))
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 def needs_relogin() -> tuple[bool, str]:
@@ -63,25 +64,31 @@ def needs_relogin() -> tuple[bool, str]:
     remaining = SESSION_TTL_S - age
 
     if remaining < PANIC_TTL_S:
-        return True, (f"PANIC: {remaining:.0f}s left (<{PANIC_TTL_S}s) "
-                      f"— forcing relogin even if scrapes are active")
+        return True, (
+            f"PANIC: {remaining:.0f}s left (<{PANIC_TTL_S}s) "
+            f"— forcing relogin even if scrapes are active"
+        )
 
     if remaining < MARGIN_S:
         scrapes = active_scrapes(OUT_DIR, stale_after_s=LOCK_STALE_AFTER_S)
         if scrapes:
             ids = ", ".join(s.get("job_id", "?") for s in scrapes)
-            return False, (f"defer: {len(scrapes)} active scrape(s) "
-                           f"[{ids}]; remaining={remaining:.0f}s")
+            return False, (
+                f"defer: {len(scrapes)} active scrape(s) [{ids}]; remaining={remaining:.0f}s"
+            )
         return True, f"age={age:.0f}s, remaining={remaining:.0f}s (<{MARGIN_S}s margin)"
 
     return False, f"age={age:.0f}s, remaining={remaining:.0f}s"
 
 
 def main() -> int:
-    print(f"[{_now()}] login_daemon starting "
-          f"(interval={CHECK_INTERVAL_S}s, margin={MARGIN_S}s, "
-          f"ttl={SESSION_TTL_S}s, panic={PANIC_TTL_S}s, "
-          f"stale={LOCK_STALE_AFTER_S}s)", flush=True)
+    print(
+        f"[{_now()}] login_daemon starting "
+        f"(interval={CHECK_INTERVAL_S}s, margin={MARGIN_S}s, "
+        f"ttl={SESSION_TTL_S}s, panic={PANIC_TTL_S}s, "
+        f"stale={LOCK_STALE_AFTER_S}s)",
+        flush=True,
+    )
 
     while True:
         should, reason = needs_relogin()
@@ -89,11 +96,13 @@ def main() -> int:
             print(f"[{_now()}] relogin triggered: {reason}", flush=True)
             try:
                 login()
-                print(f"[{_now()}] relogin OK; session written to {SESSION_FILE}",
-                      flush=True)
+                print(f"[{_now()}] relogin OK; session written to {SESSION_FILE}", flush=True)
             except Exception as e:
-                print(f"[{_now()}] relogin FAILED: {type(e).__name__}: {e}",
-                      flush=True, file=sys.stderr)
+                print(
+                    f"[{_now()}] relogin FAILED: {type(e).__name__}: {e}",
+                    flush=True,
+                    file=sys.stderr,
+                )
                 # Back off briefly; next tick retries.
                 time.sleep(60)
                 continue

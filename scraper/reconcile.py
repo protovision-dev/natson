@@ -17,6 +17,7 @@ Usage:
     python reconcile.py --date 2026-04-17 --ota branddotcom
     python reconcile.py --since 2026-04-16 --until 2026-04-18
 """
+
 from __future__ import annotations
 
 import argparse
@@ -41,8 +42,9 @@ def _snapshots_for_day(day: date) -> list[Path]:
     if not d.exists():
         return []
     # Skip summary_*.json files.
-    return sorted(p for p in d.iterdir()
-                  if p.suffix == ".json" and not p.name.startswith("summary"))
+    return sorted(
+        p for p in d.iterdir() if p.suffix == ".json" and not p.name.startswith("summary")
+    )
 
 
 def _matches(snap: dict, hotel: str | None, ota: str | None) -> bool:
@@ -55,18 +57,18 @@ def _matches(snap: dict, hotel: str | None, ota: str | None) -> bool:
 
 def main() -> int:
     p = argparse.ArgumentParser(description="Ingest on-disk JSON snapshots into Postgres.")
-    p.add_argument("--date",  help="single YYYY-MM-DD scrape date")
+    p.add_argument("--date", help="single YYYY-MM-DD scrape date")
     p.add_argument("--since", help="start of range YYYY-MM-DD (inclusive)")
     p.add_argument("--until", help="end of range YYYY-MM-DD (inclusive, default=today)")
     p.add_argument("--hotel", help="filter to this subscription_id")
-    p.add_argument("--ota",   help="filter to this OTA (e.g. bookingdotcom)")
-    p.add_argument("--dry-run", action="store_true",
-                   help="show what would be ingested; don't call ingest")
+    p.add_argument("--ota", help="filter to this OTA (e.g. bookingdotcom)")
+    p.add_argument(
+        "--dry-run", action="store_true", help="show what would be ingested; don't call ingest"
+    )
     args = p.parse_args()
 
     if not pg_configured() and not args.dry_run:
-        print("[!] Postgres not configured — set POSTGRES_* env (or --dry-run)",
-              file=sys.stderr)
+        print("[!] Postgres not configured — set POSTGRES_* env (or --dry-run)", file=sys.stderr)
         return 2
 
     if args.date:
@@ -117,8 +119,10 @@ def main() -> int:
                 print(f"[ok]   {label}  scrape_run_id={run_id}")
 
     print()
-    print(f"[*] files matched: {total_files}  ok: {total_ok}  failed: {total_fail}  "
-          f"filtered out: {total_skip}")
+    print(
+        f"[*] files matched: {total_files}  ok: {total_ok}  failed: {total_fail}  "
+        f"filtered out: {total_skip}"
+    )
     return 0 if total_fail == 0 else 1
 
 
