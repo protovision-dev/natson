@@ -3,10 +3,10 @@
 Two disjoint paths feed Postgres:
 
 - **`db/init/`** — only runs on a **fresh `pg_data` volume** (the official
-  `postgres` image's `/docker-entrypoint-initdb.d` convention). Extensions,
-  the Metabase DB bootstrap, and the legacy `scrape_jobs` table. Don't
-  put evolving schema here — blowing away the volume is the only way to
-  re-run these, and that destroys data.
+  `postgres` image's `/docker-entrypoint-initdb.d` convention). Extensions
+  and the legacy `scrape_jobs` table. Don't put evolving schema here —
+  blowing away the volume is the only way to re-run these, and that
+  destroys data.
 - **`db/migrations/`** — versioned SQL files applied by `db/migrate.sh`
   against an already-running `postgres` service. Idempotent via a
   `schema_migrations` tracking table.
@@ -58,8 +58,9 @@ per-version hooks in `migrate.sh`:
 | Area | File |
 |---|---|
 | Extensions | `db/init/00_extensions.sql` (fresh volume), `db/migrations/0002_extensions.sql` (runtime) |
-| Metabase bootstrap | `db/init/01_metabase_db.sh` |
 | Legacy job state | `db/init/02_scrape_jobs.sql` |
+| App-tier roles (`natson_ro`, `natson_auth`) | `db/bootstrap-app-roles.sh` (env-driven, idempotent) |
+| better-auth schema | `db/migrations/0016_auth_schema.sql` + `0017_better_auth_tables.sql` |
 | Rate-tracking dimensions | `db/migrations/0003_dimensions.sql` |
 | Scrape run audit | `db/migrations/0004_scrape_runs.sql` |
 | Rate fact tables | `db/migrations/0005_facts.sql` |
