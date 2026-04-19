@@ -4,4 +4,4 @@ camoufox[geoip]==0.4.11
 playwright==1.58.0
 fastapi==0.135.3
 uvicorn[standard]==0.44.0
-pydantic==2.13.1
+pydantic==2.13.2
