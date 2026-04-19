@@ -167,7 +167,7 @@ jobs:
             type=sha,prefix=,suffix=,format=short
             type=raw,value=latest,enable={{is_default_branch}}
       - name: Build (and push on main)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ${{ matrix.context }}
           push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
@@ -206,7 +206,7 @@ jobs:
         run: |
           docker pull ghcr.io/${{ github.repository_owner }}/natson-scraper:latest
           docker tag ghcr.io/${{ github.repository_owner }}/natson-scraper:latest natson-scraper:latest
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v7
         with:
           context: ./jobs-api
           push: true
