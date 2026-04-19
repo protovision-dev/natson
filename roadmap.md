@@ -284,7 +284,7 @@ After Phase 5:
 
 1. **Bring the stack up** if it isn't already:
    ```
-   cd /Users/user/Github/natsonhotels
+   cd /path/to/natsonhotels   # your local clone
    docker compose up -d
    ```
 2. Confirm session is fresh (the login daemon should have kept it so):
