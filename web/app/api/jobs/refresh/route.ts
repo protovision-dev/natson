@@ -5,6 +5,7 @@ import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { isAdmin } from "@/lib/admin";
 import { subjectCodesToSubscriptionIds } from "@/lib/jobs";
+import { humanizeUpstreamError } from "@/lib/upstream-error";
 
 export const dynamic = "force-dynamic";
 
@@ -80,5 +81,12 @@ export async function POST(req: Request) {
     }
   })();
 
+  // FastAPI returns errors as {detail: "..."}; the React client reads
+  // `data.error`. Normalise so the user sees the actual server message
+  // ("Max parallel jobs reached (2). Try again shortly.") instead of
+  // a bare "Failed (429)".
+  if (!upstream.ok) {
+    json.error = humanizeUpstreamError(upstream.status, json);
+  }
   return NextResponse.json(json, { status: upstream.status });
 }

@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 
 import { auth } from "@/lib/auth";
 import { isAdmin } from "@/lib/admin";
+import { humanizeUpstreamError } from "@/lib/upstream-error";
 import { buildResumePayload, fetchFailedJobForResume, markResumed } from "@/lib/job-resume";
 
 export const dynamic = "force-dynamic";
@@ -109,5 +110,6 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
       { status: upstream.status },
     );
   }
+  json.error = humanizeUpstreamError(upstream.status, json);
   return NextResponse.json(json, { status: upstream.status });
 }
