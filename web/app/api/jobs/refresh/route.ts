@@ -1,24 +1,36 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
-import { subjectCodesToSubscriptionIds } from "@/lib/jobs";
 import { z } from "zod";
+
+import { auth } from "@/lib/auth";
+import { isAdmin } from "@/lib/admin";
+import { subjectCodesToSubscriptionIds } from "@/lib/jobs";
 
 export const dynamic = "force-dynamic";
 
-const Body = z.object({
-  subjects: z.array(z.string().min(1)).min(1),
-  // YYYY-MM | YYYY-MM-DD | rolling:N | YYYY-MM-DD:YYYY-MM-DD
-  dates: z.string().min(4),
-  ota: z.enum(["bookingdotcom", "branddotcom"]).default("bookingdotcom"),
-  los: z.number().int().positive().max(90).optional(),
-  persons: z.number().int().positive().max(10).optional(),
-  refresh: z.boolean().default(true),
-});
+// LOS rules: booking carries 1/7/28; brand only 1/7. Validated server-
+// side so a malformed UI submission can't slip through.
+const Body = z
+  .object({
+    subjects: z.array(z.string().min(1)).min(1),
+    // YYYY-MM | YYYY-MM-DD | rolling:N | YYYY-MM-DD:YYYY-MM-DD
+    dates: z.string().min(4),
+    ota: z.enum(["bookingdotcom", "branddotcom"]),
+    los: z.union([z.literal(1), z.literal(7), z.literal(28)]),
+    persons: z.number().int().positive().max(10).optional(),
+    refresh: z.boolean().default(true),
+  })
+  .refine((b) => !(b.ota === "branddotcom" && b.los === 28), {
+    message: "Brand.com does not provide 28-day rates; pick 1 or 7.",
+    path: ["los"],
+  });
 
 export async function POST(req: Request) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  if (!isAdmin(session.user.email)) {
+    return NextResponse.json({ error: "Only admins can trigger scrapes" }, { status: 403 });
+  }
 
   const jobsApi = process.env.JOBS_API ?? "http://jobs-api:8770";
 

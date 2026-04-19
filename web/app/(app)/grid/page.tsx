@@ -2,7 +2,6 @@ import { fetchAvailableMonths, fetchGrid, fetchSources, fetchSubjects } from "@/
 import { RateGrid } from "@/components/RateGrid";
 import { LastUpdatedCard } from "@/components/LastUpdatedCard";
 import { FilterBar } from "@/components/FilterBar";
-import { RefreshButton } from "@/components/RefreshButton";
 
 export const dynamic = "force-dynamic";
 
@@ -81,14 +80,6 @@ export default async function GridPage({ searchParams }: { searchParams: Promise
           current={{ subject, source, los, persons, month }}
         />
         <span className="ml-auto" />
-        <RefreshButton
-          subject={subject}
-          source={source}
-          los={los}
-          persons={persons}
-          from={from}
-          to={to}
-        />
         <LastUpdatedCard
           observation={data.last_observation_ts}
           extract={data.last_extract_datetime}
