@@ -102,38 +102,75 @@ services:
     networks:
       - natson
 
-  metabase:
-    image: metabase/metabase:latest
-    container_name: natson-metabase
+  jobs-api:
+    build: ./jobs-api
+    image: natson-jobs-api:latest
+    container_name: natson-jobs-api
     restart: unless-stopped
+    ports:
+      - "${JOBS_API_PORT:-8770}:8770"
     depends_on:
       postgres:
         condition: service_healthy
-    ports:
-      - "${METABASE_PORT:-3000}:3000"
+      scraper:
+        condition: service_started
     env_file:
       - .env
     environment:
-      MB_DB_TYPE: postgres
-      MB_DB_DBNAME: "${METABASE_DB}"
-      MB_DB_PORT: "5432"
-      MB_DB_USER: "${METABASE_DB_USER}"
-      MB_DB_PASS: "${METABASE_DB_PASSWORD}"
-      MB_DB_HOST: postgres
+      OUT_DIR: "/app/output"
+      RUN_JOB_PY: "/app/run_job.py"
+      SCRAPER_CWD: "/app"
+      MAX_PARALLEL_JOBS: "${MAX_PARALLEL_JOBS:-2}"
+      BROWSER_API: "http://browser-api:8765"
+      WRITE_DB: "${WRITE_DB:-1}"
+      HOTELS_FILE: "/app/hotels.json"
     volumes:
-      - metabase_data:/metabase-data
+      # Share session.json + status.json + log dirs with scraper + scraper-login.
+      - session_vol:/app/output:rw
+      - ./scraper/hotels.json:/app/hotels.json:ro
+      - ./scraper/subject_hotels.json:/app/subject_hotels.json:ro
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:3000/api/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8770/health').read()"]
       interval: 30s
-      timeout: 10s
+      timeout: 5s
       retries: 5
-      start_period: 60s
+      start_period: 10s
+    networks:
+      - natson
+
+  web:
+    build: ./web
+    image: natson-web:latest
+    container_name: natson-web
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      jobs-api:
+        condition: service_started
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: "postgres://natson_ro:${NATSON_RO_PASSWORD}@postgres:5432/${POSTGRES_DB}"
+      AUTH_DATABASE_URL: "postgres://natson_auth:${NATSON_AUTH_PASSWORD}@postgres:5432/${POSTGRES_DB}"
+      BETTER_AUTH_SECRET: "${BETTER_AUTH_SECRET}"
+      BETTER_AUTH_URL: "${BETTER_AUTH_URL:-http://localhost:3000}"
+      NEXT_PUBLIC_BETTER_AUTH_URL: "${BETTER_AUTH_URL:-http://localhost:3000}"
+      JOBS_API: "http://jobs-api:8770"
+      NODE_ENV: production
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:3000/api/auth/ok"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     networks:
       - natson
 
 volumes:
   pg_data:
-  metabase_data:
   session_vol:
 
 networks:

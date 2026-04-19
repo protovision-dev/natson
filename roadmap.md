@@ -2,17 +2,17 @@
 
 Living spec for turning the Lighthouse rate scraper into a small enterprise
 BI app: fully containerized, flexible job-driven scraping, concurrent runs,
-Postgres persistence, Metabase visualization.
+Postgres persistence, custom React frontend (Lighthouse-style rate grid).
 
-## Current state (end of 2026-04-17)
+## Current state (end of 2026-04-19)
 
-**On `refactor/dockerize-stack` — 7 commits, phases 1-4 done + Phase 6
-dashboards landed ahead of schedule. Only Phase 5 (full rates-schema
-DAL) remains.**
+**On `feat/web-frontend` — phases 1-7 complete. Metabase decommissioned;
+React frontend + jobs-api sidecar are the primary surfaces.**
 
-- **Stack is live via `docker compose up -d`** — five services healthy:
+- **Stack is live via `docker compose up -d`** — six services healthy:
   browser-api (8765), scraper (idle / invoked per job), scraper-login
-  (auto-refreshes `session.json`), postgres 16, metabase (3010).
+  (auto-refreshes `session.json`), postgres 16, jobs-api (8770), web
+  (3020).
 - **10 portfolio hotels** ("subscriptions" in Lighthouse terms) — only
   these can drive `/rates/` and `/liveshop` calls. The 71 "accessible"
   hotels in `scraper/output/accessible_hotels.json` are compset
@@ -26,15 +26,12 @@ DAL) remains.**
 - **Concurrent jobs work.** Each `docker compose run --rm scraper ...`
   spawns an ephemeral container; per-(hotel, ota) fcntl locks in
   `output/locks/` keep them from stepping on each other.
-- **Live Metabase dashboards** at
-  http://localhost:3010/dashboard/2#refresh=30 (Active scrapes) and
-  http://localhost:3010/dashboard/3#refresh=60 (Scrape history).
-  `#refresh=N` makes Metabase auto-poll Postgres every N seconds.
-- **Two OTAs proven:** `bookingdotcom` (7,007 cells) and `branddotcom`
-  (7,735 cells) captured cleanly earlier in the day.
-- **End-of-day smoke:** portfolio × 2026-05 × `--no-refresh` ran
-  clean in 179s — 10/10 hotels, 2,635 rate cells, row persisted in
-  `scrape_jobs`, visible in both dashboards.
+- **Web UI at http://localhost:3020** — Lighthouse-style rate grid
+  with three frozen-left columns (Date, Market demand, Subject
+  Property), competitors scrolling horizontally, today's row
+  highlighted. Refresh-rates button proxies to jobs-api which spawns
+  `run_job.py`. better-auth (email/password) gates the app.
+- **Two OTAs proven:** `bookingdotcom` and `branddotcom`.
 
 ## Key design decisions
 
@@ -197,19 +194,65 @@ Shipped across 21 commits on `feat/phase5-postgres-ingest`:
   `backups/natson-pre-dual-scrape-20260418-105020.dump` before the
   dual-scrape experiment.
 
-### Phase 6 — Metabase dashboards ✅ / Jobs API ⏳
+### Phase 6 — Metabase dashboards ✅ then removed
 
-- `metabase/provision.py` — idempotent bootstrap that runs Metabase's
-  first-time setup (admin + Postgres connection) or re-auths if
-  already set up, then creates/updates cards and lays out two
-  dashboards via the REST API.
-- Dashboard "Active scrapes" — scalar count + per-job progress table
-  from `active_scrapes` view.
-- Dashboard "Scrape history" — jobs-by-state pie, completed-by-OTA
-  bar, per-day stacked line, and 100-row history table.
-- Still deferred: FastAPI `POST /jobs` sidecar that shells to
-  `run_job.py`. Only worth building once Metabase (or another UI)
-  needs to trigger runs programmatically.
+Originally provisioned 4 dashboards (Active scrapes, Scrape history,
+Rate intelligence, Rate grid) via `metabase/provision.py`. Superseded
+by Phase 7's React frontend; the Metabase service, `metabase` Postgres
+DB, `metabase_data` volume, `metabase/` provisioning code, and
+`db/init/01_metabase_db.sh` were all removed once the React UI covered
+Active + Recent scrapes and the Lighthouse-style rate grid. A final
+metabase DB dump lives at `backups/metabase-final-*.dump` for recovery
+if anyone wants to spin Metabase back up against the same data.
+
+### Phase 7 — Custom React frontend ✅ (branch `feat/web-frontend`)
+
+Replaces Metabase as the primary surface, modeled on the MyLighthouse
+rate-grid view. Metabase ran side-by-side at :3010 during the
+transition; after the React UI covered the rate grid + Active +
+Recent dashboards, Metabase was decommissioned (service, DB, volume,
+provisioning code all removed; final dump archived).
+
+- **Stack**: Next.js 15 App Router (TypeScript) + Tailwind +
+  better-auth (email/password) + postgres.js + pg (better-auth pool).
+  Built into a standalone container, served on `:3020`.
+- **DB tier**: two new roles created via `db/bootstrap-app-roles.sh`
+  (env-driven passwords; idempotent). `natson_ro` is read-only on
+  `public`; `natson_auth` owns the new `auth` schema where better-auth
+  stores `user`/`session`/`account`/`verification` (migrations 0016 +
+  0017). Pool sets `search_path=auth,public` so unqualified table
+  references resolve into `auth`.
+- **Pages**: `/grid` (rate grid, sticky date column + hotel columns,
+  market-demand bar, sold-out chip, Last-Updated card driven by
+  `MAX(observation_ts)` + `MAX(extract_datetime)`); `/jobs` (active +
+  recent, polls every 10s); `/login`, `/signup`. URL search params
+  drive the filter state for shareable links.
+- **API surface (Next.js route handlers)**:
+  - `GET /api/grid` — server-side pivot of `v_rate_grid_latest`
+  - `GET /api/subjects`, `/api/sources`
+  - `GET /api/jobs?state=active|recent|all`, `GET /api/jobs/[id]`
+  - `POST /api/jobs/refresh` — translates subject_codes →
+    subscription_ids and proxies to the new jobs-api sidecar
+  - `GET/POST /api/auth/[...all]` — better-auth handler
+- **Jobs API sidecar (`jobs-api/` on :8770)**: thin FastAPI wrapper
+  that spawns `python run_job.py --hotels … --dates … --ota …
+  --job-id <id>` as a detached subprocess and returns the job_id
+  immediately. Reuses `natson-scraper:latest` as the base image so it
+  inherits run_job.py and all scraper deps. `MAX_PARALLEL_JOBS` caps
+  concurrency; 429 on overflow.
+- **Smoke verified end-to-end on `feat/web-frontend`**: signup →
+  /grid renders 38k rate cells → click Refresh rates → row appears
+  in `active_scrapes` → grid auto-revalidates with newer
+  `observation_ts` → `/jobs` lists the completed run.
+
+#### Picking up next on this branch
+
+1. Add a real shadcn/ui month-picker to FilterBar (currently `<input
+   type=date>`).
+2. Replace `/jobs` polling with SSE/WebSocket once we want sub-10s
+   visibility.
+3. Wire a "compare" view (subject vs. compset median) — the only
+   Metabase dashboard the React UI didn't replicate before removal.
 
 ## Verification recipe (after Phase 3)
 
@@ -233,8 +276,7 @@ After Phase 5:
   consider Alembic once views multiply.
 - **`hotels.json` editing UX** — Phase 4 CLI works for devs; a UI
   is a post-Phase-6 problem.
-- **Jobs API** — deferred. Only worth building when Metabase (or
-  another UI) needs to trigger runs programmatically.
+- **Jobs API** — built in Phase 7 (`jobs-api/` on :8770).
 - **Portfolio expansion 10 → 50+** — requires adding Lighthouse
   subscriptions (business/ops task), not code.
 
