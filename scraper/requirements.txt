@@ -4,4 +4,4 @@ certifi==2026.2.25
 charset-normalizer==3.4.7
 idna==3.11
 PyYAML==6.0.2
-psycopg[binary]==3.2.3
+psycopg[binary]==3.3.3
