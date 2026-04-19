@@ -1,0 +1,43 @@
+# Caddy config for production.
+#
+# Caddy auto-provisions TLS via Let's Encrypt for the domain below.
+# Make sure DNS for the domain points at the VPS *before* you `docker
+# compose up`, or Caddy will back off and the first request will 5xx.
+#
+# Override the domain by setting DOMAIN in the repo-root .env:
+#     DOMAIN=rates.yourco.com
+# docker-compose.prod.yml passes it through as a container env var and
+# Caddy's `{$DOMAIN:fallback}` syntax picks it up here.
+
+{$DOMAIN:natson.protovision.app} {
+	encode gzip zstd
+
+	# Reverse-proxy everything to the Next.js service on the internal
+	# natson network. Caddy is the only container that publishes 80/443.
+	reverse_proxy web:3000 {
+		header_up X-Real-IP {remote_host}
+		header_up X-Forwarded-Proto {scheme}
+	}
+
+	# Tight security headers at the edge, complementing the ones the
+	# Next.js app already sets in code (Caddy won't double-add; it
+	# passes through the upstream headers unchanged here).
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}
+
+# If $DOMAIN isn't set and you want a local TLS smoke test, Caddy's
+# `tls internal` generates a self-signed cert via its local CA. Uncomment
+# and hit https://localhost from the host (trust Caddy's root CA first):
+#
+# localhost {
+# 	tls internal
+# 	reverse_proxy web:3000
+# }

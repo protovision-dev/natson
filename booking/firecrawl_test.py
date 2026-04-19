@@ -5,11 +5,12 @@ Firecrawl with a JSON-extraction schema asking for the lowest week price, and
 saves a sidecar JSON comparing Lighthouse's shop_value to what Booking.com
 returns.
 """
+
 import json
 import os
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import requests
@@ -136,26 +137,38 @@ def main() -> int:
         extracted = body["data"]["json"] if ok else None
         print(f"    HTTP {resp['http_status']} success={ok}")
         if extracted:
-            print(f"    → ${extracted.get('lowest_price_for_one_week')} {extracted.get('currency','')} room='{(extracted.get('room_type') or '')[:60]}'")
+            print(
+                f"    → ${extracted.get('lowest_price_for_one_week')} {extracted.get('currency', '')} room='{(extracted.get('room_type') or '')[:60]}'"
+            )
         else:
             err = body.get("error") if isinstance(body, dict) else str(body)[:200]
             print(f"    → no extraction: {err}")
-        results.append({
-            **t,
-            "firecrawl_http_status": resp["http_status"],
-            "firecrawl_success": bool(ok),
-            "firecrawl_extracted": extracted,
-            "firecrawl_error": (body.get("error") if isinstance(body, dict) and not ok else None),
-            "extracted_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-        })
+        results.append(
+            {
+                **t,
+                "firecrawl_http_status": resp["http_status"],
+                "firecrawl_success": bool(ok),
+                "firecrawl_extracted": extracted,
+                "firecrawl_error": (
+                    body.get("error") if isinstance(body, dict) and not ok else None
+                ),
+                "extracted_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+            }
+        )
         time.sleep(1.0)
 
     out_path = OUT / "firecrawl_test.json"
-    out_path.write_text(json.dumps({
-        "scraped_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-        "limit": LIMIT,
-        "results": results,
-    }, indent=2, default=str))
+    out_path.write_text(
+        json.dumps(
+            {
+                "scraped_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+                "limit": LIMIT,
+                "results": results,
+            },
+            indent=2,
+            default=str,
+        )
+    )
     n_ok = sum(1 for r in results if r.get("firecrawl_success"))
     print(f"\n[*] wrote {out_path} ({n_ok}/{len(results)} extracted)")
     return 0 if n_ok else 1

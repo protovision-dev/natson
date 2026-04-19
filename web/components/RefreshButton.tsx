@@ -70,9 +70,7 @@ export function RefreshButton(p: Props) {
         }
         const job = await res.json();
         const progress =
-          job.hotels_total > 0
-            ? `${job.hotels_done}/${job.hotels_total}`
-            : "starting";
+          job.hotels_total > 0 ? `${job.hotels_done}/${job.hotels_total}` : "starting";
         setMsg(`${job.state} — ${progress} (${job.duration_seconds}s)`);
         if (job.state === "completed" || job.state === "failed") {
           setPhase(job.state === "completed" ? "done" : "error");

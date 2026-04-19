@@ -21,12 +21,13 @@ Shape:
       "exit_code": null | 0 | 1 | ...
     }
 """
+
 from __future__ import annotations
 
 import json
 import os
 import tempfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -46,7 +47,7 @@ def log_path(out_dir: Path, job_id: str) -> Path:
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 def write_status(out_dir: Path, payload: dict) -> None:
@@ -139,6 +140,7 @@ class StatusWriter:
         # Import lazily so the scraper still works with no Postgres at all.
         try:
             from db.jobs import upsert_job_status
+
             upsert_job_status(self.payload)
         except Exception:
             pass

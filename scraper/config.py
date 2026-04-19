@@ -3,6 +3,7 @@
 All scripts in scraper/ import from here instead of hardcoding paths,
 endpoints, or date logic.
 """
+
 import json
 import os
 from datetime import date, timedelta
@@ -38,6 +39,7 @@ REFRESH_POLL_TIMEOUT_S = int(os.environ.get("REFRESH_POLL_TIMEOUT_S", "300"))
 
 # ---------- rolling months ----------
 
+
 def rolling_months(months_ahead: int = 2) -> list[str]:
     """Current month + next `months_ahead` months as YYYY-MM strings.
 
@@ -58,12 +60,16 @@ def rolling_months(months_ahead: int = 2) -> list[str]:
 
 # ---------- URL generation ----------
 
-def build_rates_page_url(hotel_id: str, month: str, compset_id: int = 1,
-                         los: int = 7, persons: int = 2) -> str:
+
+def build_rates_page_url(
+    hotel_id: str, month: str, compset_id: int = 1, los: int = 7, persons: int = 2
+) -> str:
     """Lighthouse frontend rates page URL (what a human visits)."""
-    return (f"{API_BASE}/hotel/{hotel_id}/rates?"
-            f"compsetId={compset_id}&los={los}&maxPersons={persons}"
-            f"&month={month}&view=table")
+    return (
+        f"{API_BASE}/hotel/{hotel_id}/rates?"
+        f"compsetId={compset_id}&los={los}&maxPersons={persons}"
+        f"&month={month}&view=table"
+    )
 
 
 def month_range(month: str) -> tuple[str, str]:
@@ -111,28 +117,33 @@ def build_rates_api_url(
             raise ValueError("provide `month` or both `from_date`+`to_date`")
         start, end = from_date, to_date
 
-    return f"{RATES_API}?{urlencode({
-        'ota': ota,
-        'los': los,
-        'mealtype': mealtype,
-        'persons': persons,
-        'roomtype': roomtype,
-        'membershiptype': membershiptype,
-        'compset_ids': compset_id,
-        'platform': platform,
-        'meta': meta,
-        'bar': 'true' if bar else 'false',
-        'flexible': 'true' if flexible else 'false',
-        'rate_type': rate_type,
-        'from_date_range_start': start,
-        'from_date_range_end': end,
-        'hotel_id': hotel_id,
-    })}"
+    return f"{RATES_API}?{
+        urlencode(
+            {
+                'ota': ota,
+                'los': los,
+                'mealtype': mealtype,
+                'persons': persons,
+                'roomtype': roomtype,
+                'membershiptype': membershiptype,
+                'compset_ids': compset_id,
+                'platform': platform,
+                'meta': meta,
+                'bar': 'true' if bar else 'false',
+                'flexible': 'true' if flexible else 'false',
+                'rate_type': rate_type,
+                'from_date_range_start': start,
+                'from_date_range_end': end,
+                'hotel_id': hotel_id,
+            }
+        )
+    }"
 
 
 def swap_dates(final_url: str, checkin: str, los: int) -> str:
     """Replace checkin/checkout query params on a Booking.com URL."""
-    from urllib.parse import urlsplit, urlunsplit, parse_qsl
+    from urllib.parse import parse_qsl, urlsplit, urlunsplit
+
     parts = urlsplit(final_url)
     q = dict(parse_qsl(parts.query, keep_blank_values=True))
     q["checkin"] = checkin
@@ -142,14 +153,14 @@ def swap_dates(final_url: str, checkin: str, los: int) -> str:
 
 # ---------- hotels.json ----------
 
+
 def load_hotels_config(path: Path | None = None) -> dict:
     """Load and return the hotels.json config."""
     p = path or HOTELS_FILE
     return json.loads(p.read_text())
 
 
-def build_targets(config: dict | None = None,
-                  hotel_ids: list[str] | None = None) -> list[dict]:
+def build_targets(config: dict | None = None, hotel_ids: list[str] | None = None) -> list[dict]:
     """From hotels.json, produce a flat list of (hotel, month) targets.
 
     If hotel_ids is provided, only include those hotels (for Phase 1 single-
@@ -171,15 +182,17 @@ def build_targets(config: dict | None = None,
         months_ahead = hotel.get("months_ahead", defaults.get("months_ahead", 2))
         months = rolling_months(months_ahead)
         for month in months:
-            targets.append({
-                "hotel_id": hid,
-                "hotel_name": name,
-                "month": month,
-                "compset_id": compset_id,
-                "los": los,
-                "persons": persons,
-                "ota": ota,
-                "page_url": build_rates_page_url(hid, month, compset_id, los, persons),
-                "api_url": build_rates_api_url(hid, month, compset_id, los, persons, ota),
-            })
+            targets.append(
+                {
+                    "hotel_id": hid,
+                    "hotel_name": name,
+                    "month": month,
+                    "compset_id": compset_id,
+                    "los": los,
+                    "persons": persons,
+                    "ota": ota,
+                    "page_url": build_rates_page_url(hid, month, compset_id, los, persons),
+                    "api_url": build_rates_api_url(hid, month, compset_id, los, persons, ota),
+                }
+            )
     return targets

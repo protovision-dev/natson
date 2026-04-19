@@ -18,10 +18,7 @@ export async function GET(req: Request) {
   const to = url.searchParams.get("to");
 
   if (!subject || !from || !to) {
-    return NextResponse.json(
-      { error: "subject, from, to are required" },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: "subject, from, to are required" }, { status: 400 });
   }
 
   try {

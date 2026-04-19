@@ -35,20 +35,22 @@ export async function fetchGrid(params: {
   to: string;
 }): Promise<GridResponse> {
   const { subject, source, los, persons = 2, from, to } = params;
-  const rows = await sql<{
-    stay_date: string;
-    market_demand_pct: number | null;
-    competitor_hotelinfo_id: string;
-    competitor_name: string;
-    is_own: boolean;
-    rate_value: number | null;
-    shop_value: number | null;
-    all_in_price: number | null;
-    is_available: boolean;
-    message: string | null;
-    observation_ts: string | null;
-    extract_datetime: string | null;
-  }[]>`
+  const rows = await sql<
+    {
+      stay_date: string;
+      market_demand_pct: number | null;
+      competitor_hotelinfo_id: string;
+      competitor_name: string;
+      is_own: boolean;
+      rate_value: number | null;
+      shop_value: number | null;
+      all_in_price: number | null;
+      is_available: boolean;
+      message: string | null;
+      observation_ts: string | null;
+      extract_datetime: string | null;
+    }[]
+  >`
     SELECT
       stay_date::text,
       market_demand_pct,
@@ -139,10 +141,7 @@ export async function fetchSources() {
  * a month sets the grid's `from` to the 1st of that month and `to` to
  * the last day of the latest month in this list.
  */
-export async function fetchAvailableMonths(
-  subject: string,
-  source: string,
-): Promise<string[]> {
+export async function fetchAvailableMonths(subject: string, source: string): Promise<string[]> {
   const rows = await sql<{ ym: string }[]>`
     SELECT DISTINCT to_char(stay_date, 'YYYY-MM') AS ym
     FROM v_rate_grid_latest

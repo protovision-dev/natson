@@ -140,7 +140,9 @@ function StateBadge({ state }: { state: string }) {
           ? "bg-blue-50 text-blue-800 ring-blue-200"
           : "bg-zinc-50 text-zinc-700 ring-zinc-200";
   return (
-    <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium ring-1 ring-inset ${cls}`}>
+    <span
+      className={`inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium ring-1 ring-inset ${cls}`}
+    >
       {state}
     </span>
   );

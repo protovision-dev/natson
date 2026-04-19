@@ -57,9 +57,7 @@ export function RateGrid({ data }: { data: GridResponse }) {
               style={{ left: LEFT_SUBJECT, width: W_SUBJECT, minWidth: W_SUBJECT }}
               title={own?.name ?? "Subject property"}
             >
-              <div className="line-clamp-2 break-words">
-                {own?.name ?? "Subject"}
-              </div>
+              <div className="line-clamp-2 break-words">{own?.name ?? "Subject"}</div>
             </th>
             {others.map((c) => (
               <th
@@ -76,15 +74,12 @@ export function RateGrid({ data }: { data: GridResponse }) {
         <tbody>
           {data.rows.map((r) => {
             const ownCell = own
-              ? r.cells.find((x) => x.competitor_hotelinfo_id === own.id) ?? null
+              ? (r.cells.find((x) => x.competitor_hotelinfo_id === own.id) ?? null)
               : null;
             const isToday = r.stay_date === today;
 
             return (
-              <tr
-                key={r.stay_date}
-                className="group border-b border-line/60"
-              >
+              <tr key={r.stay_date} className="group border-b border-line/60">
                 <td
                   className={
                     "sticky z-10 px-2 py-1.5 font-medium " +

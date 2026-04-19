@@ -5,6 +5,7 @@ Only the IDs present in hotels.json can drive /rates/ and /liveshop —
 those are the "portfolio" (subscriptions we own).  Any other ID is a
 compset competitor that can only be observed inside a portfolio scrape.
 """
+
 from __future__ import annotations
 
 import json
@@ -40,7 +41,7 @@ def resolve_hotels(expr: str, hotels_file: Path | None = None) -> list[str]:
         return sorted(portfolio)
 
     if expr.startswith("file:"):
-        other = _load(Path(expr[len("file:"):]))
+        other = _load(Path(expr[len("file:") :]))
         ids = _portfolio_ids(other)
         missing = [i for i in ids if i not in portfolio]
         if missing:
@@ -52,9 +53,7 @@ def resolve_hotels(expr: str, hotels_file: Path | None = None) -> list[str]:
     ids = [p.strip() for p in expr.split(",") if p.strip()]
     missing = [i for i in ids if i not in portfolio]
     if missing:
-        raise ValueError(
-            f"hotel_id(s) not in portfolio (no subscription access): {missing}"
-        )
+        raise ValueError(f"hotel_id(s) not in portfolio (no subscription access): {missing}")
     return ids
 
 
@@ -69,6 +68,7 @@ def get_hotel_metadata(hotel_id: str, hotels_file: Path | None = None) -> dict:
 
 
 # --- admin verbs (called from scraper/admin.py in Phase 4) ----------------
+
 
 def add_subscription(hotel_id: str, name: str, hotels_file: Path | None = None) -> None:
     p = hotels_file or _HOTELS_FILE_DEFAULT

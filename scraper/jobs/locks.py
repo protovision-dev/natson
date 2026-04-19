@@ -11,6 +11,7 @@ Flock is process-level; it scopes to the mounted volume, which is
 shared across all `docker compose run` invocations on the same
 session_vol, so independent scraper containers respect each other.
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -50,11 +51,11 @@ def per_subscription_ota_lock(
                 fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 acquired = True
                 break
-            except BlockingIOError:
+            except BlockingIOError as e:
                 if time.monotonic() - start > timeout_s:
                     raise TimeoutError(
                         f"could not acquire lock for {hotel_id}/{ota} in {timeout_s:.0f}s"
-                    )
+                    ) from e
                 time.sleep(poll_s)
         yield path
     finally:

@@ -8,6 +8,7 @@ parallel without contending on Lighthouse's refresh concurrency.
 
 See roadmap.md and jobs/spec.py for the full flag surface.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -16,18 +17,17 @@ import os
 import random
 import sys
 import time
-from datetime import date, datetime, timezone
 from pathlib import Path
 
-from config import OUT_DIR, SESSION_FILE, CACHE_DIR
-from jobs.spec import Job, add_cli_args
+import yaml
+
+from config import CACHE_DIR, OUT_DIR, SESSION_FILE
 from jobs.locks import per_subscription_ota_lock
 from jobs.scrape_lock import ScrapeLock
+from jobs.spec import Job, add_cli_args
 from jobs.status import StatusWriter, log_path
-from scrape import make_session, scrape_hotel, Caches
+from scrape import Caches, make_session, scrape_hotel
 from snapshot import save_hotel_snapshot, save_job_summary
-
-import yaml
 
 _CONFIG_PATH = Path(__file__).resolve().parent / "scraper.config.yml"
 
@@ -64,8 +64,10 @@ def _save(path: Path, data: dict) -> None:
 
 # ---------- stdout tee to per-job log ----------
 
+
 class _Tee:
     """Mirror stdout writes to a log file so `monitor.py tail` can follow."""
+
     def __init__(self, stream, fh):
         self._stream = stream
         self._fh = fh
@@ -92,13 +94,18 @@ class _Tee:
 
 # ---------- main ----------
 
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Run a single Lighthouse scrape job (one per invocation)."
     )
     add_cli_args(parser)
-    parser.add_argument("--from-spec", dest="from_spec", default=None,
-        help="Load a Job from a JSON spec instead of CLI flags.")
+    parser.add_argument(
+        "--from-spec",
+        dest="from_spec",
+        default=None,
+        help="Load a Job from a JSON spec instead of CLI flags.",
+    )
     args, _ = parser.parse_known_args()
 
     if args.from_spec:
@@ -107,20 +114,21 @@ def main() -> int:
         job = Job.from_cli(args)
 
     if not SESSION_FILE.exists():
-        print(f"[!] {SESSION_FILE} missing — run login_daemon.py (or login.py) first",
-              file=sys.stderr)
+        print(
+            f"[!] {SESSION_FILE} missing — run login_daemon.py (or login.py) first", file=sys.stderr
+        )
         return 2
 
     cfg = _config()
     jitter_h = cfg["pacing"]["jitter_hotels_s"]
-    jitter_m = cfg["pacing"]["jitter_months_s"]  # unused for now; kept for future
     lock_timeout = float(cfg["locks"]["lock_timeout_s"])
 
     # Reproducibility: write the resolved spec before doing any work.
     spec_path = job.write(OUT_DIR)
 
     # Tee stdout/stderr to a per-job log so monitor.py tail can follow.
-    log_file = open(log_path(OUT_DIR, job.job_id), "a", buffering=1)
+    # Lifetime spans the whole job; closed implicitly on process exit.
+    log_file = open(log_path(OUT_DIR, job.job_id), "a", buffering=1)  # noqa: SIM115
     sys.stdout = _Tee(sys.stdout, log_file)
     sys.stderr = _Tee(sys.stderr, log_file)
 
@@ -128,23 +136,29 @@ def main() -> int:
     # while we're holding in-memory cookies.  The lock file is removed
     # on any exit path (normal return, exception, kill) via the context
     # manager's __exit__.
-    _scrape_lock = ScrapeLock(OUT_DIR, job.job_id, {
-        "hotels":        job.hotels,
-        "ota":           job.ota,
-        "checkin_from":  str(job.checkin_dates[0]),
-        "checkin_to":    str(job.checkin_dates[-1]),
-        "do_refresh":    job.do_refresh,
-    })
+    _scrape_lock = ScrapeLock(
+        OUT_DIR,
+        job.job_id,
+        {
+            "hotels": job.hotels,
+            "ota": job.ota,
+            "checkin_from": str(job.checkin_dates[0]),
+            "checkin_to": str(job.checkin_dates[-1]),
+            "do_refresh": job.do_refresh,
+        },
+    )
     _scrape_lock.__enter__()
 
     status = StatusWriter(OUT_DIR, job.job_id, job.to_dict())
     status.set(state="running")
 
-    header = (f"[*] job={job.job_id}  hotels={len(job.hotels)}  "
-              f"dates={job.checkin_dates[0]}..{job.checkin_dates[-1]} "
-              f"({len(job.checkin_dates)} days)  ota={job.ota}  "
-              f"refresh={'ON' if job.do_refresh else 'OFF'}"
-              f"{'  (refresh-only)' if job.refresh_only else ''}")
+    header = (
+        f"[*] job={job.job_id}  hotels={len(job.hotels)}  "
+        f"dates={job.checkin_dates[0]}..{job.checkin_dates[-1]} "
+        f"({len(job.checkin_dates)} days)  ota={job.ota}  "
+        f"refresh={'ON' if job.do_refresh else 'OFF'}"
+        f"{'  (refresh-only)' if job.refresh_only else ''}"
+    )
     print(header)
     print(f"[*] spec written to {spec_path}")
     status.log_line(header)
@@ -158,47 +172,66 @@ def main() -> int:
     hotelinfos_cache = _load(HOTELINFOS_CACHE, refresh_all or "hotelinfos" in refresh_meta)
     booking_urls_path = _booking_urls_cache_path(job.ota)
     booking_cache = _load(booking_urls_path, refresh_all or "urls" in refresh_meta)
-    caches = Caches(hotels=hotels_cache, hotelinfos=hotelinfos_cache,
-                    booking_urls=booking_cache)
+    caches = Caches(hotels=hotels_cache, hotelinfos=hotelinfos_cache, booking_urls=booking_cache)
 
     summary_results = []
     for i, hotel_id in enumerate(job.hotels, 1):
         banner = f"[{i}/{len(job.hotels)}] hotel_id={hotel_id}"
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(banner)
-        status.set(current={"hotel_id": hotel_id, "index": i, "total": len(job.hotels), "step": "starting"})
+        status.set(
+            current={"hotel_id": hotel_id, "index": i, "total": len(job.hotels), "step": "starting"}
+        )
         status.log_line(banner)
 
         t0 = time.time()
         try:
             with per_subscription_ota_lock(
-                hotel_id, job.ota, OUT_DIR, timeout_s=lock_timeout,
+                hotel_id,
+                job.ota,
+                OUT_DIR,
+                timeout_s=lock_timeout,
             ):
-                status.set(current={"hotel_id": hotel_id, "index": i, "total": len(job.hotels), "step": "scraping"})
+                status.set(
+                    current={
+                        "hotel_id": hotel_id,
+                        "index": i,
+                        "total": len(job.hotels),
+                        "step": "scraping",
+                    }
+                )
                 snap = scrape_hotel(sess, job, hotel_id, caches)
                 path = save_hotel_snapshot(hotel_id, snap, job_id=job.job_id, ota=job.ota)
             dur = time.time() - t0
-            ok_line = f"  [ok] {snap.get('total_rate_cells', 0)} rate cells → {path.name} ({dur:.0f}s)"
+            ok_line = (
+                f"  [ok] {snap.get('total_rate_cells', 0)} rate cells → {path.name} ({dur:.0f}s)"
+            )
             print(ok_line)
             status.log_line(ok_line)
             status.mark_hotel_done(ok=True)
-            summary_results.append({
-                "hotel_id": hotel_id, "status": "ok",
-                "duration_s": round(dur, 1),
-                "rates_count": snap.get("total_rate_cells", 0),
-                "snapshot": path.name,
-            })
+            summary_results.append(
+                {
+                    "hotel_id": hotel_id,
+                    "status": "ok",
+                    "duration_s": round(dur, 1),
+                    "rates_count": snap.get("total_rate_cells", 0),
+                    "snapshot": path.name,
+                }
+            )
         except Exception as e:
             dur = time.time() - t0
             fail_line = f"  [FAIL] {type(e).__name__}: {e}"
             print(fail_line)
             status.log_line(fail_line)
             status.mark_hotel_done(ok=False)
-            summary_results.append({
-                "hotel_id": hotel_id, "status": "failed",
-                "duration_s": round(dur, 1),
-                "error": f"{type(e).__name__}: {e}",
-            })
+            summary_results.append(
+                {
+                    "hotel_id": hotel_id,
+                    "status": "failed",
+                    "duration_s": round(dur, 1),
+                    "error": f"{type(e).__name__}: {e}",
+                }
+            )
 
         if i < len(job.hotels):
             jitter = random.uniform(float(jitter_h[0]), float(jitter_h[1]))
@@ -229,12 +262,15 @@ def _run_guarded() -> int:
         # ScrapeLock's __exit__ in main() already handled normal exit.
         # Here we only care about the crash path — try to scan and
         # scrub any locks our PID created, but don't mask the error.
-        import os as _os, glob as _glob
+        import glob as _glob
+        import os as _os
+
         try:
             pid = _os.getpid()
             for f in _glob.glob(str(OUT_DIR / "locks" / "active" / "*.lock")):
                 try:
                     import json as _json
+
                     with open(f) as fh:
                         data = _json.load(fh)
                     if data.get("pid") == pid:

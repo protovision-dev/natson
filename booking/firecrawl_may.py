@@ -2,13 +2,14 @@
 the week of May 13-20, 2026. Compares Booking.com's 'Price for 1 week' against
 Lighthouse's shop_value for the same date.
 """
+
 import json
 import os
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import requests
 
@@ -106,20 +107,22 @@ def collect_urls() -> list[dict]:
                 continue  # no May data at all for this hotel
 
             seen_slugs.add(slug)
-            out.append({
-                "subscription_hotel_id": sub["hotel_id"],
-                "subscription_hotel_name": sub["hotel_name"],
-                "hotelinfo_id": hi_id,
-                "property_name": names.get(hi_id, "?"),
-                "checkin": CHECKIN,
-                "checkout": CHECKOUT,
-                "booking_url": lock_dates(base_url, CHECKIN, CHECKOUT),
-                "lighthouse_value_per_night": lh_rate.get("value"),
-                "lighthouse_shop_value": lh_rate.get("shop_value"),
-                "lighthouse_currency": lh_rate.get("currency"),
-                "lighthouse_room_name": lh_rate.get("room_name"),
-                "lighthouse_message": lh_rate.get("message"),
-            })
+            out.append(
+                {
+                    "subscription_hotel_id": sub["hotel_id"],
+                    "subscription_hotel_name": sub["hotel_name"],
+                    "hotelinfo_id": hi_id,
+                    "property_name": names.get(hi_id, "?"),
+                    "checkin": CHECKIN,
+                    "checkout": CHECKOUT,
+                    "booking_url": lock_dates(base_url, CHECKIN, CHECKOUT),
+                    "lighthouse_value_per_night": lh_rate.get("value"),
+                    "lighthouse_shop_value": lh_rate.get("shop_value"),
+                    "lighthouse_currency": lh_rate.get("currency"),
+                    "lighthouse_room_name": lh_rate.get("room_name"),
+                    "lighthouse_message": lh_rate.get("message"),
+                }
+            )
     return out
 
 
@@ -165,33 +168,53 @@ def main() -> int:
         ok = isinstance(body, dict) and body.get("success") and body.get("data", {}).get("json")
         extracted = body["data"]["json"] if ok else None
         if extracted:
-            print(f"    HTTP {resp['http_status']} → ${extracted.get('lowest_price_for_one_week')} {extracted.get('currency','')}  room='{(extracted.get('room_type') or '')[:55]}'  sold_out={extracted.get('sold_out')}")
+            print(
+                f"    HTTP {resp['http_status']} → ${extracted.get('lowest_price_for_one_week')} {extracted.get('currency', '')}  room='{(extracted.get('room_type') or '')[:55]}'  sold_out={extracted.get('sold_out')}"
+            )
         else:
             err = body.get("error") if isinstance(body, dict) else str(body)[:200]
             print(f"    HTTP {resp['http_status']} → no extraction: {err}")
-        results.append({
-            **t,
-            "firecrawl_http_status": resp["http_status"],
-            "firecrawl_success": bool(ok),
-            "firecrawl_extracted": extracted,
-            "firecrawl_error": (body.get("error") if isinstance(body, dict) and not ok else None),
-            "extracted_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-        })
+        results.append(
+            {
+                **t,
+                "firecrawl_http_status": resp["http_status"],
+                "firecrawl_success": bool(ok),
+                "firecrawl_extracted": extracted,
+                "firecrawl_error": (
+                    body.get("error") if isinstance(body, dict) and not ok else None
+                ),
+                "extracted_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+            }
+        )
         # Periodically save progress so a long run isn't lost.
         if i % 10 == 0:
-            (OUT / "firecrawl_may.json").write_text(json.dumps({
-                "scraped_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-                "checkin": CHECKIN, "checkout": CHECKOUT,
-                "results": results,
-            }, indent=2, default=str))
+            (OUT / "firecrawl_may.json").write_text(
+                json.dumps(
+                    {
+                        "scraped_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+                        "checkin": CHECKIN,
+                        "checkout": CHECKOUT,
+                        "results": results,
+                    },
+                    indent=2,
+                    default=str,
+                )
+            )
         time.sleep(0.5)
 
     out_path = OUT / "firecrawl_may.json"
-    out_path.write_text(json.dumps({
-        "scraped_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-        "checkin": CHECKIN, "checkout": CHECKOUT,
-        "results": results,
-    }, indent=2, default=str))
+    out_path.write_text(
+        json.dumps(
+            {
+                "scraped_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+                "checkin": CHECKIN,
+                "checkout": CHECKOUT,
+                "results": results,
+            },
+            indent=2,
+            default=str,
+        )
+    )
     n_ok = sum(1 for r in results if r.get("firecrawl_success"))
     n_sold = sum(1 for r in results if (r.get("firecrawl_extracted") or {}).get("sold_out"))
     print(f"\n[*] wrote {out_path} — {n_ok}/{len(results)} extracted ({n_sold} sold out)")

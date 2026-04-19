@@ -61,26 +61,17 @@ export function FilterBar({
   return (
     <div
       className={
-        "flex flex-wrap items-center gap-2 " +
-        (pending ? "opacity-60 transition-opacity" : "")
+        "flex flex-wrap items-center gap-2 " + (pending ? "opacity-60 transition-opacity" : "")
       }
     >
-      <Select
-        label="Subject"
-        value={current.subject}
-        onChange={(v) => update({ subject: v })}
-      >
+      <Select label="Subject" value={current.subject} onChange={(v) => update({ subject: v })}>
         {subjects.map((s) => (
           <option key={s.subject_code} value={s.subject_code}>
             {s.display_name}
           </option>
         ))}
       </Select>
-      <Select
-        label="OTA"
-        value={current.source}
-        onChange={(v) => update({ source: v })}
-      >
+      <Select label="OTA" value={current.source} onChange={(v) => update({ source: v })}>
         {sources.map((s) => (
           <option key={s.source_code} value={s.source_code}>
             {s.source_code}
@@ -109,11 +100,7 @@ export function FilterBar({
           </option>
         ))}
       </Select>
-      <Select
-        label="From month"
-        value={current.month}
-        onChange={(v) => update({ month: v })}
-      >
+      <Select label="From month" value={current.month} onChange={(v) => update({ month: v })}>
         {months.length === 0 ? (
           <option value={current.month}>{fmtMonth(current.month)}</option>
         ) : (

@@ -192,6 +192,92 @@ spec.json, run.log}` — is still written on every run, so CLI tools
 if Postgres is unreachable, so a Postgres blip never kills a running
 scrape.
 
+## Quality + CI
+
+| Check | Local command | CI job |
+|---|---|---|
+| JS/TS lint | `cd web && npm run lint` | `lint-web` |
+| JS/TS typecheck | `cd web && npm run typecheck` | `lint-web` |
+| JS/TS format | `cd web && npm run format:check` | `lint-web` |
+| JS/TS tests (vitest) | `cd web && npm test` | `test-web` |
+| Python lint + format | `ruff check . && ruff format --check .` | `lint-py` |
+| Python types | `mypy scraper jobs-api browser-api` | `lint-py` (soft) |
+| scraper tests | `pytest scraper/tests` | `test-py-scraper` |
+| jobs-api tests | `pytest jobs-api/tests` | `test-py-jobs-api` |
+| Secret scan | `trufflehog filesystem .` | `secret-scan` |
+| CVE scan | `trivy fs .` | `dep-scan` |
+
+Pre-commit (`.pre-commit-config.yaml`) runs the subset that's fast on a
+diff. Install once per clone:
+
+```bash
+pipx install pre-commit   # or: brew install pre-commit
+pre-commit install
+```
+
+GitHub Actions (`.github/workflows/ci.yml`) re-runs everything on every
+PR and push to `main`; merge-to-main also pushes commit-sha-tagged
+docker images to `ghcr.io/<owner>/natson-<service>`.
+
+## Production deploy (VPS + Caddy)
+
+The full runbook — prerequisites, first boot, upgrades, rollback,
+backups, "things to NOT do" — lives in [`deploy/README.md`](./deploy/README.md).
+The short version:
+
+```bash
+# On the VPS, after DNS points at it and docker is installed:
+git clone https://github.com/<you>/natsonhotels.git /srv/natsonhotels
+cd /srv/natsonhotels
+
+cp .env.production.example .env
+$EDITOR .env     # DOMAIN, passwords, RESEND_API_KEY, LH_USER/PASS, etc.
+
+# Pull the images that CI published to GHCR (or `docker compose build`).
+docker compose \
+    -f docker-compose.yml \
+    -f deploy/docker-compose.prod.yml \
+    pull
+
+# One-time DB bootstrap.
+docker compose up -d postgres
+./db/migrate.sh up
+./db/bootstrap-app-roles.sh
+
+# Bring up the full stack. Caddy provisions a Let's Encrypt cert for
+# $DOMAIN on first request.
+docker compose \
+    -f docker-compose.yml \
+    -f deploy/docker-compose.prod.yml \
+    up -d
+
+# Confirm the cert issued cleanly.
+docker compose logs -f caddy | grep -Ei '(cert|obtained|error)'
+```
+
+What the prod overlay (`deploy/docker-compose.prod.yml`) changes vs. the
+dev compose:
+
+- Adds **Caddy** as the only public-facing service (80, 443, 443/udp).
+  Reverse-proxies to `web:3000` on the internal `natson` network.
+- Drops the `ports:` mapping on `web` so nothing but Caddy reaches it.
+- Sets `NODE_ENV=production` and `BETTER_AUTH_URL=https://${DOMAIN}` on
+  `web` so better-auth issues `Secure` session cookies.
+- `restart: always` on every service.
+
+`jobs-api` and `postgres` are **already internal-only** in the base
+compose file (dropped their public ports in the production hardening
+phase). Don't re-publish them.
+
+### Known follow-up: non-root containers
+
+Three images (`scraper`, `jobs-api`, `browser-api`) still run as UID 0.
+Only `web` drops privileges. Switching the rest requires a one-time
+`chown` of `session_vol` (root-owned today) to UID 1001 before the
+first boot after the Dockerfile change. Full procedure in
+[`deploy/README.md`](./deploy/README.md#known-follow-ups-not-blocking-but-do-them).
+Prioritize this on the **VPS** — locally it's defense-in-depth.
+
 ## Repo layout
 
 ```
@@ -211,8 +297,12 @@ natsonhotels/
 │   └── bootstrap-app-roles.sh   Creates natson_ro + natson_auth from .env
 ├── jobs-api/          FastAPI sidecar; spawns run_job.py on demand
 ├── web/               Next.js 15 frontend (rate grid + jobs UI + better-auth)
-├── docker-compose.yml The stack
-├── .env.example       Shape of the gitignored .env
+├── deploy/            VPS prod overlay: Caddyfile + compose.prod.yml + runbook
+├── .github/           CI workflow (ci.yml) + Dependabot config
+├── docker-compose.yml The stack (dev defaults)
+├── .env.example       Shape of the gitignored .env (dev)
+├── .env.production.example   Shape of prod .env (fill in on the VPS)
+├── pyproject.toml     ruff + mypy + pytest config
 └── roadmap.md         Full plan: decisions, phases, verification
 ```
 

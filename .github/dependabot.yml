@@ -1,0 +1,48 @@
+version: 2
+updates:
+  # Frontend
+  - package-ecosystem: npm
+    directory: /web
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      next:
+        patterns: ["next", "@next/*", "eslint-config-next"]
+      react:
+        patterns: ["react", "react-dom", "@types/react*"]
+      tanstack:
+        patterns: ["@tanstack/*"]
+      types:
+        patterns: ["@types/*"]
+      dev-tooling:
+        patterns:
+          - eslint*
+          - prettier*
+          - vitest
+          - "@vitejs/*"
+          - "@testing-library/*"
+
+  # Python
+  - package-ecosystem: pip
+    directory: /scraper
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: pip
+    directory: /browser-api
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+
+  # CI itself
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
