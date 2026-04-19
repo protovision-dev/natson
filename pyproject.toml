@@ -67,3 +67,11 @@ exclude = [
 [[tool.mypy.overrides]]
 module = ["camoufox.*", "yaml.*", "psycopg.*"]
 ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+# importlib mode lets us collocate `tests/conftest.py` in multiple
+# packages (scraper/, jobs-api/) without pytest treating them as one
+# rootless `tests` package and erroring on the duplicate path.
+addopts = "--import-mode=importlib"
+# CI invokes `pytest scraper/tests` and `pytest jobs-api/tests` as
+# separate matrix jobs so each test session loads only one conftest.
