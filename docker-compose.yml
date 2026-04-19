@@ -170,7 +170,9 @@ services:
       # /login is the reliable always-200 liveness target. better-auth
       # has no canonical /healthz endpoint and /api/auth/get-session
       # only returns 200 once a request hits a real route.
-      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:3000/login"]
+      # Use 127.0.0.1 (not localhost) because Next.js binds 0.0.0.0
+      # (IPv4-only) and Alpine's wget resolves "localhost" to ::1 first.
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:3000/login"]
       interval: 30s
       timeout: 5s
       retries: 5
