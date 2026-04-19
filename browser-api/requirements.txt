@@ -1,5 +1,7 @@
-camoufox[geoip]
-playwright
-fastapi
-uvicorn[standard]
-pydantic>=2
+# Pinned for reproducibility + supply-chain safety. Refresh by rebuilding
+# the image, then `pip freeze` and updating the constraints below.
+camoufox[geoip]==0.4.11
+playwright==1.58.0
+fastapi==0.135.3
+uvicorn[standard]==0.44.0
+pydantic==2.13.1
