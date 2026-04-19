@@ -126,8 +126,7 @@ function RecentTable({ rows, admin }: { rows: RecentJob[]; admin: boolean }) {
                 <Td>
                   {r.resumed_to_job_id ? (
                     <span className="text-[11px] text-subtle">
-                      resumed →{" "}
-                      <span className="font-mono">{r.resumed_to_job_id}</span>
+                      resumed → <span className="font-mono">{r.resumed_to_job_id}</span>
                     </span>
                   ) : r.state === "failed" && r.hotels_done < r.hotels_total ? (
                     <JobResumeButton

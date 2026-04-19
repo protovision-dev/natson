@@ -12,10 +12,7 @@
  * `data.error`. Without normalization they'd display "Failed (429)"
  * and the user would have to crack open devtools to see why.
  */
-export function humanizeUpstreamError(
-  status: number,
-  body: Record<string, unknown>,
-): string {
+export function humanizeUpstreamError(status: number, body: Record<string, unknown>): string {
   if (typeof body.error === "string" && body.error.length > 0) return body.error;
 
   const detail = body.detail;
