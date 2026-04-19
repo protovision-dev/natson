@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <title>WOPR</title>
+  <defs>
+    <!-- Subtle bloom around lit LEDs so they read at favicon scale. -->
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="0.55" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+    <!-- Faint scanline texture across the panel. -->
+    <pattern id="scan" width="1" height="2" patternUnits="userSpaceOnUse">
+      <rect width="1" height="1" fill="rgba(255,255,255,0.04)" />
+    </pattern>
+  </defs>
+
+  <!-- Panel: rounded near-black background with brushed feel. -->
+  <rect width="32" height="32" rx="4" fill="#0a0d12" />
+  <rect width="32" height="32" rx="4" fill="url(#scan)" />
+
+  <!-- 5×5 LED grid. r/a/y = red/amber/yellow lit, dark dots are "off".
+       Pattern picked by eye to evoke the WOPR cabinet rather than be
+       perfectly regular. -->
+  <g filter="url(#glow)">
+    <!-- row 1 -->
+    <circle cx="5" cy="5"  r="1.7" fill="#ff3b30" />
+    <circle cx="11" cy="5" r="1.4" fill="#3a1212" />
+    <circle cx="17" cy="5" r="1.7" fill="#ffaa00" />
+    <circle cx="23" cy="5" r="1.7" fill="#ff3b30" />
+    <circle cx="29" cy="5" r="1.4" fill="#3a1f12" />
+    <!-- row 2 -->
+    <circle cx="5" cy="11"  r="1.7" fill="#ffd200" />
+    <circle cx="11" cy="11" r="1.7" fill="#ff3b30" />
+    <circle cx="17" cy="11" r="1.7" fill="#ffaa00" />
+    <circle cx="23" cy="11" r="1.4" fill="#3a1f12" />
+    <circle cx="29" cy="11" r="1.7" fill="#ff3b30" />
+    <!-- row 3 -->
+    <circle cx="5" cy="17"  r="1.4" fill="#3a1212" />
+    <circle cx="11" cy="17" r="1.7" fill="#ffaa00" />
+    <circle cx="17" cy="17" r="1.7" fill="#ff3b30" />
+    <circle cx="23" cy="17" r="1.7" fill="#ffd200" />
+    <circle cx="29" cy="17" r="1.4" fill="#3a1f12" />
+    <!-- row 4 -->
+    <circle cx="5" cy="23"  r="1.7" fill="#ff3b30" />
+    <circle cx="11" cy="23" r="1.4" fill="#3a1f12" />
+    <circle cx="17" cy="23" r="1.7" fill="#ffd200" />
+    <circle cx="23" cy="23" r="1.7" fill="#ff3b30" />
+    <circle cx="29" cy="23" r="1.7" fill="#ffaa00" />
+    <!-- row 5 -->
+    <circle cx="5" cy="29"  r="1.7" fill="#ffaa00" />
+    <circle cx="11" cy="29" r="1.7" fill="#ff3b30" />
+    <circle cx="17" cy="29" r="1.4" fill="#3a1f12" />
+    <circle cx="23" cy="29" r="1.7" fill="#ff3b30" />
+    <circle cx="29" cy="29" r="1.7" fill="#ffd200" />
+  </g>
+</svg>

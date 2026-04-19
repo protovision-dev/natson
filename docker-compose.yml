@@ -169,6 +169,7 @@ services:
       JOBS_API_INTERNAL_TOKEN: "${JOBS_API_INTERNAL_TOKEN}"
       RESEND_API_KEY: "${RESEND_API_KEY}"
       RESEND_FROM: "${RESEND_FROM}"
+      ADMIN_EMAILS: "${ADMIN_EMAILS}"
       NODE_ENV: production
     healthcheck:
       # /login is the reliable always-200 liveness target. better-auth

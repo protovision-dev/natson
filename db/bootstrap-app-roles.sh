@@ -67,6 +67,12 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA auth
     GRANT ALL ON TABLES TO natson_auth;
 ALTER DEFAULT PRIVILEGES IN SCHEMA auth
     GRANT ALL ON SEQUENCES TO natson_auth;
+
+-- Narrow write access on scrape_jobs so /api/jobs/[id]/resume can
+-- mark the parent job's resumed_to_job_id. natson_ro stays read-only;
+-- natson_auth gains exactly one column-level UPDATE on public side.
+GRANT SELECT ON public.scrape_jobs TO natson_auth;
+GRANT UPDATE (resumed_to_job_id) ON public.scrape_jobs TO natson_auth;
 SQL
 
 echo "[bootstrap] applied app-tier roles to ${PG_DB} on ${COMPOSE_SERVICE}."
