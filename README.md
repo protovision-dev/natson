@@ -2,8 +2,8 @@
 
 A production-oriented pipeline that pulls daily competitor room rates from
 [Lighthouse](https://app.mylighthouse.com) for Natson's 10 portfolio
-properties, stores them for trend analysis, and will surface them through
-Metabase for internal BI.
+properties, stores them for trend analysis, and surfaces them through a
+custom React frontend modeled on Lighthouse's own rate grid.
 
 > Full architecture, decisions, and open items live in
 > [`roadmap.md`](./roadmap.md). This README is the quick-start.
@@ -14,11 +14,12 @@ Metabase for internal BI.
 |---|---|---|
 | `browser-api` | FastAPI + Camoufox login/scrape service | http://localhost:8765 |
 | `scraper` | Python — runs Job-driven scrapes; idle by default | invoked via `docker compose run` |
-| `scraper-login` | Long-running login daemon (Phase 4 — placeholder today) | — |
-| `postgres` | Main datastore (`natson` + `metabase` DBs) | localhost:5432 |
-| `metabase` | Self-service BI on Postgres | http://localhost:3010 |
+| `scraper-login` | Long-running login daemon — auto-refreshes `session.json` | — |
+| `postgres` | Main datastore (`natson` DB + `auth` schema) | localhost:5432 |
+| `jobs-api` | Thin FastAPI sidecar that spawns `run_job.py` on demand | http://localhost:8770 |
+| `web` | Next.js 15 + better-auth — Lighthouse-style rate grid + jobs UI | http://localhost:3020 |
 
-All five live in one `docker-compose.yml` at the repo root, sharing a
+All six live in one `docker-compose.yml` at the repo root, sharing a
 `natson` bridge network.
 
 ## Phase status
@@ -26,11 +27,12 @@ All five live in one `docker-compose.yml` at the repo root, sharing a
 | Phase | Status | What's in |
 |---|---|---|
 | 1 — Git bootstrap + secret hygiene | ✅ | `.gitignore`, `.env.example`, compose reads creds from `.env` |
-| 2 — Compose + Postgres + Metabase scaffold | ✅ | five-service stack, `docker compose up -d` brings it healthy |
+| 2 — Compose + Postgres scaffold | ✅ | container stack, `docker compose up -d` brings it healthy |
 | 3 — Flexible `run_job.py` + Job abstraction | ✅ | every URL param is a flag; concurrent-safe via fcntl locks |
 | 4 — Login daemon + portfolio admin | ✅ | `scraper-login` auto-refreshes `session.json`; `admin.py` manages `hotels.json` |
 | 5 — Postgres rates ingest | ✅ | `scraper/db/ingest.py` dual-writes snapshots; `db/migrate.sh` runs SQL migrations; pg_cron auto-rolls monthly partitions |
-| 6 — Metabase dashboards + optional Jobs API | ✅ (dashboards) / ⏳ (Jobs API) | `metabase/provision.py` stands up the admin + DB + two dashboards idempotently |
+| 6 — Metabase dashboards | ✅ then removed | superseded by Phase 7; metabase service + DB dropped on `feat/web-frontend` |
+| 7 — React frontend + Jobs API | ✅ | Next.js 15 grid + better-auth + jobs-api sidecar; replaces Metabase |
 
 ## Quick start
 
@@ -155,49 +157,40 @@ SELECT * FROM active_scrapes;
 SELECT * FROM recent_scrapes;
 ```
 
-**Metabase hook-up (one-time, scripted):**
+**Web UI (the primary surface):**
 
-```bash
-docker compose run --rm \
-    -v "$PWD/metabase:/metabase:ro" \
-    -e METABASE_URL=http://metabase:3000 \
-    scraper python /metabase/provision.py
+```
+http://localhost:3020
 ```
 
-That script is **idempotent** — it uses the first-boot setup token if
-Metabase hasn't been touched, else logs in with `METABASE_ADMIN_*`
-creds from `.env`. It creates the admin account, wires the Postgres
-connection, and builds two dashboards:
+First time: `/signup` → land on `/grid`. better-auth users live in the
+`auth` schema of the `natson` DB.
 
-- **Active scrapes** (polls every 30s):
-  http://localhost:3010/dashboard/2#refresh=30
-  — scalar count + per-job progress table.
-- **Scrape history** (polls every 60s):
-  http://localhost:3010/dashboard/3#refresh=60
-  — jobs by state (pie), completed scrapes by OTA (bar), jobs per day
-  (stacked line), and the last-100 table.
-- **Rate intelligence** (polls every 5 min):
-  http://localhost:3010/dashboard/4#refresh=300
-  — own rate vs compset median, booking curve per stay_date, rate
-  changes, compset coverage, and scrape-run health.
-- **Rate grid** (Subject × Source × LOS filters):
-  http://localhost:3010/dashboard/7
-  — Lighthouse-style pivoted matrix: stay dates × competitors, with a
-  market-demand strip on top and a competitor legend (column header →
-  full name + last updated) at the bottom.
+- **`/grid`** — Lighthouse-style rate grid: rows = check-in dates,
+  three frozen-left columns (Date, Market demand, Subject Property)
+  with a freeze line, competitors scroll horizontally to the right.
+  Today's row highlighted orange. Filter bar drives subject / OTA /
+  nights / guests / from-month via URL params. **Refresh rates**
+  button shells to `jobs-api`, polls until the scrape completes, then
+  silently re-renders.
+- **`/jobs`** — active + recent scrapes from `active_scrapes` /
+  `recent_scrapes` views; auto-refreshes every 10s.
 
-`#refresh=N` is a Metabase URL hash that makes the dashboard poll its
-underlying queries every N seconds, so you get a live view without
-reloading. Bookmark the URL with the fragment attached.
+**One-time DB setup for the web tier:**
 
-Log in with the `METABASE_ADMIN_EMAIL` / `PASSWORD` from your `.env`
-(defaults `admin@natson.local` / placeholder — change for production).
+```bash
+./db/migrate.sh up                  # creates auth schema + tables
+./db/bootstrap-app-roles.sh         # creates natson_ro + natson_auth
+```
+
+Both are idempotent. Passwords come from `.env` (`NATSON_RO_PASSWORD`,
+`NATSON_AUTH_PASSWORD`).
 
 The filesystem fallback — `scraper/output/jobs/{job_id}/{status.json,
-spec.json, run.log}` — is still written on every run, so
-non-Metabase tools (CLI grep, `tail -f`, whatever) keep working. DB
-writes silently no-op if Postgres is unreachable, so a Postgres blip
-never kills a running scrape.
+spec.json, run.log}` — is still written on every run, so CLI tools
+(`grep`, `tail -f`, whatever) keep working. DB writes silently no-op
+if Postgres is unreachable, so a Postgres blip never kills a running
+scrape.
 
 ## Repo layout
 
@@ -212,7 +205,12 @@ natsonhotels/
 │   ├── config.py | refresh.py | scrape.py | snapshot.py | login.py
 │   └── hotels.json    portfolio subscription list
 ├── booking/           Parked Booking.com scripts (Firecrawl + direct browser)
-├── db/init/           Postgres init: extensions + metabase DB bootstrap
+├── db/                Migrations + bootstrap script for app-tier roles
+│   ├── init/          Postgres extensions (run on first boot)
+│   ├── migrations/    Versioned SQL applied via db/migrate.sh
+│   └── bootstrap-app-roles.sh   Creates natson_ro + natson_auth from .env
+├── jobs-api/          FastAPI sidecar; spawns run_job.py on demand
+├── web/               Next.js 15 frontend (rate grid + jobs UI + better-auth)
 ├── docker-compose.yml The stack
 ├── .env.example       Shape of the gitignored .env
 └── roadmap.md         Full plan: decisions, phases, verification
@@ -220,8 +218,8 @@ natsonhotels/
 
 ## Configuration
 
-- `.env` at the root — Postgres, Metabase, Lighthouse, proxy, Firecrawl
-  creds. **Never committed.**
+- `.env` at the root — Postgres, Lighthouse, proxy, Firecrawl, web-tier
+  (better-auth secret + app-role passwords). **Never committed.**
 - `browser-api/.env` — Camoufox + proxy. **Never committed.**
 - `scraper/scraper.config.yml` — default URL params + pacing. Committed.
 - `scraper/hotels.json` — portfolio subscriptions. Committed.
@@ -248,6 +246,7 @@ hotelinfos appear as compset competitors inside a portfolio scrape.
 - **`rate-limit flags active`** — Lighthouse reflects your own running
   refresh back as "concurrent monthshop" while it runs; not a block.
   See [`scraper/api.md`](./scraper/api.md) §4.
-- **Metabase port collision** — 3000 is often taken by other tools.
-  We default to 3010 in `.env.example`; override `METABASE_PORT` to
-  pick another port.
+- **Web port collision** — 3000 is commonly taken by other tools
+  (open-webui, generic Node services). We default to 3020 in
+  `.env.example`; override `WEB_PORT` to pick another port (and
+  update `BETTER_AUTH_URL` to match).
