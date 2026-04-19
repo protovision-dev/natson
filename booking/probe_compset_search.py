@@ -1,6 +1,9 @@
 """Open the compset management page, type in the search box, and capture any XHRs."""
-import asyncio, json, os
+
+import asyncio
+import json
 from pathlib import Path
+
 from camoufox.async_api import AsyncCamoufox
 
 OUT = Path("/out")
@@ -23,16 +26,28 @@ async def main():
     captured = []
 
     async with AsyncCamoufox(
-        headless="virtual", humanize=True, os="macos", locale="en-US",
-        geoip=True, i_know_what_im_doing=True,
+        headless="virtual",
+        humanize=True,
+        os="macos",
+        locale="en-US",
+        geoip=True,
+        i_know_what_im_doing=True,
         config={"navigator.userAgent": UA},
     ) as browser:
         ctx = await browser.new_context(viewport={"width": 1600, "height": 1000}, user_agent=UA)
-        await ctx.add_cookies([
-            {"name": c["name"], "value": c["value"], "domain": "app.mylighthouse.com",
-             "path": "/", "secure": True, "sameSite": "None"}
-            for c in SESSION["cookies"]
-        ])
+        await ctx.add_cookies(
+            [
+                {
+                    "name": c["name"],
+                    "value": c["value"],
+                    "domain": "app.mylighthouse.com",
+                    "path": "/",
+                    "secure": True,
+                    "sameSite": "None",
+                }
+                for c in SESSION["cookies"]
+            ]
+        )
         page = await ctx.new_page()
 
         async def on_resp(r):
@@ -42,7 +57,14 @@ async def main():
                     body = await r.text()
                 except Exception:
                     body = ""
-                captured.append({"url": u, "status": r.status, "method": r.request.method, "body_snip": body[:800]})
+                captured.append(
+                    {
+                        "url": u,
+                        "status": r.status,
+                        "method": r.request.method,
+                        "body_snip": body[:800],
+                    }
+                )
 
         page.on("response", on_resp)
 
@@ -89,7 +111,7 @@ async def main():
                         await loc.click()
                         await loc.type("motel 6", delay=60)
                         await page.wait_for_timeout(3000)
-                        print(f"   typed into search box")
+                        print("   typed into search box")
                 except Exception as e:
                     print(f"   type err: {e}")
 
@@ -97,7 +119,11 @@ async def main():
     print(f"\n[*] captured {len(captured)} JSON XHRs")
     for x in captured:
         print(f"   {x['method']} {x['status']} {x['url'][:140]}")
-        if "motel" in x["body_snip"].lower() or "search" in x["url"].lower() or "compset" in x["url"].lower():
+        if (
+            "motel" in x["body_snip"].lower()
+            or "search" in x["url"].lower()
+            or "compset" in x["url"].lower()
+        ):
             print(f"      ↳ {x['body_snip'][:300]}")
 
 

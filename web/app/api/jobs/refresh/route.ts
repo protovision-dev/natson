@@ -40,10 +40,7 @@ export async function POST(req: Request) {
 
   const internalToken = process.env.JOBS_API_INTERNAL_TOKEN;
   if (!internalToken) {
-    return NextResponse.json(
-      { error: "JOBS_API_INTERNAL_TOKEN not configured" },
-      { status: 503 },
-    );
+    return NextResponse.json({ error: "JOBS_API_INTERNAL_TOKEN not configured" }, { status: 503 });
   }
 
   const upstream = await fetch(`${jobsApi}/jobs`, {

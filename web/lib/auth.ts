@@ -13,8 +13,7 @@ declare global {
 // directly via minPasswordLength; this hook adds the character-class
 // requirement on top so we reject "aaaaaaaaaaaa" but accept "Tr0ub4dor".
 const PASSWORD_COMPLEXITY = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/;
-const PASSWORD_COMPLEXITY_MSG =
-  "Password must include lowercase, uppercase, and a digit";
+const PASSWORD_COMPLEXITY_MSG = "Password must include lowercase, uppercase, and a digit";
 
 function makeAuth() {
   const url = process.env.AUTH_DATABASE_URL;
@@ -95,8 +94,7 @@ function makeAuth() {
           ctx.path === "/change-password"
         ) {
           const password =
-            (ctx.body as { password?: string; newPassword?: string } | undefined)
-              ?.password ??
+            (ctx.body as { password?: string; newPassword?: string } | undefined)?.password ??
             (ctx.body as { newPassword?: string } | undefined)?.newPassword;
           if (password && !PASSWORD_COMPLEXITY.test(password)) {
             throw new APIError("BAD_REQUEST", { message: PASSWORD_COMPLEXITY_MSG });

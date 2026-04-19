@@ -7,16 +7,16 @@ extracts the b_rooms_available_and_soldout blob, and compares the lowest
 Usage: .venv/bin/python compare_one_day.py [hotel_id] [checkin_date]
 Default: 345062 2026-05-01
 """
+
 import json
 import os
 import random
-import re
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import date, timedelta, datetime, timezone
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
-from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import requests
 
@@ -94,9 +94,16 @@ def lowest_price(rooms, min_persons=2):
 
 def scrape_booking(url):
     try:
-        r = requests.post(f"{API}/scrape", json={
-            "url": url, "waitFor": 10000, "timeout": 90000, "ignoreHttpsErrors": True,
-        }, timeout=180)
+        r = requests.post(
+            f"{API}/scrape",
+            json={
+                "url": url,
+                "waitFor": 10000,
+                "timeout": 90000,
+                "ignoreHttpsErrors": True,
+            },
+            timeout=180,
+        )
         resp = r.json()
     except Exception as e:
         return {"error": str(e)}
@@ -105,8 +112,12 @@ def scrape_booking(url):
     html = resp["data"]["rawHtml"]
     rooms = extract_room_blob(html)
     price = lowest_price(rooms) if rooms else None
-    return {"html_size": len(html), "has_blob": rooms is not None, "price": price,
-            "n_blocks": sum(len(rt.get("b_blocks") or []) for rt in (rooms or []))}
+    return {
+        "html_size": len(html),
+        "has_blob": rooms is not None,
+        "price": price,
+        "n_blocks": sum(len(rt.get("b_blocks") or []) for rt in (rooms or [])),
+    }
 
 
 # Load latest snapshot for this hotel
@@ -131,17 +142,19 @@ for hi_id, cell in date_row["hotels"].items():
     base_url = comp.get("booking_base_url")
     if not base_url:
         continue
-    targets.append({
-        "hotelinfo_id": hi_id,
-        "name": comp.get("name", "?"),
-        "is_own": comp.get("is_own", False),
-        "lh_value": cell.get("value"),
-        "lh_shop_value": cell.get("shop_value"),
-        "lh_currency": cell.get("currency"),
-        "lh_room": cell.get("room_name"),
-        "lh_message": cell.get("message"),
-        "booking_url": lock_dates(base_url, CHECKIN, CHECKOUT),
-    })
+    targets.append(
+        {
+            "hotelinfo_id": hi_id,
+            "name": comp.get("name", "?"),
+            "is_own": comp.get("is_own", False),
+            "lh_value": cell.get("value"),
+            "lh_shop_value": cell.get("shop_value"),
+            "lh_currency": cell.get("currency"),
+            "lh_room": cell.get("room_name"),
+            "lh_message": cell.get("message"),
+            "booking_url": lock_dates(base_url, CHECKIN, CHECKOUT),
+        }
+    )
 
 print(f"[*] Hotel {HOTEL_ID} ({snapshot['hotel_name'][:50]})")
 print(f"[*] Check-in {CHECKIN} → Check-out {CHECKOUT} ({LOS} nights)")
@@ -169,7 +182,7 @@ ok = close = far = missing = 0
 for r in sorted(results, key=lambda x: x["name"]):
     lh_night = r["lh_value"] or 0
     lh_shop = r["lh_shop_value"] or 0
-    bc_price = (r["bc"].get("price") or 0)
+    bc_price = r["bc"].get("price") or 0
     name = r["name"][:44]
     own = "★" if r["is_own"] else " "
 
@@ -195,16 +208,28 @@ for r in sorted(results, key=lambda x: x["name"]):
             status = "!!FAR"
             far += 1
 
-    print(f"{own}{name:<44} ${lh_night:>7.2f} ${lh_shop:>7.0f} ${bc_price:>7.0f} {delta:>7} {status:>6}")
+    print(
+        f"{own}{name:<44} ${lh_night:>7.2f} ${lh_shop:>7.0f} ${bc_price:>7.0f} {delta:>7} {status:>6}"
+    )
 
 print("-" * 95)
-print(f"OK (<5%): {ok}  |  Close (5-15%): {close}  |  Far (>15%): {far}  |  Missing: {missing}  |  Total: {len(results)}")
+print(
+    f"OK (<5%): {ok}  |  Close (5-15%): {close}  |  Far (>15%): {far}  |  Missing: {missing}  |  Total: {len(results)}"
+)
 
 # Save
 out = Path("output") / f"compare_{HOTEL_ID}_{CHECKIN}.json"
-out.write_text(json.dumps({
-    "hotel_id": HOTEL_ID, "checkin": CHECKIN, "checkout": CHECKOUT,
-    "scraped_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-    "results": results,
-}, indent=2, default=str))
+out.write_text(
+    json.dumps(
+        {
+            "hotel_id": HOTEL_ID,
+            "checkin": CHECKIN,
+            "checkout": CHECKOUT,
+            "scraped_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+            "results": results,
+        },
+        indent=2,
+        default=str,
+    )
+)
 print(f"\n[*] saved to {out}")

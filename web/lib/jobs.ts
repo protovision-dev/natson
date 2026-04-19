@@ -82,9 +82,7 @@ export async function fetchJob(jobId: string): Promise<RecentJob | null> {
   return rows[0] ?? null;
 }
 
-export async function subjectCodesToSubscriptionIds(
-  subjectCodes: string[],
-): Promise<string[]> {
+export async function subjectCodesToSubscriptionIds(subjectCodes: string[]): Promise<string[]> {
   if (subjectCodes.length === 0) return [];
   const rows = await sql<{ subscription_id: string }[]>`
     SELECT subscription_id::text FROM subject_hotels

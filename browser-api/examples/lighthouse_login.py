@@ -3,9 +3,11 @@
 Run with:
   LH_USER=you@example.com LH_PASS='...' python lighthouse_login.py
 """
-import os
+
 import json
+import os
 import sys
+
 import requests
 
 API = os.environ.get("BROWSER_API", "http://localhost:8765")
@@ -18,14 +20,18 @@ payload = {
     "initialWaitUntil": "networkidle",
     "steps": [
         {"action": "waitForSelector", "selector": "input[type=email]", "timeout": 30000},
-        {"action": "fill",  "selector": "input[type=email]", "value": USERNAME},
+        {"action": "fill", "selector": "input[type=email]", "value": USERNAME},
         {"action": "press", "selector": "input[type=email]", "key": "Enter"},
         {"action": "waitForSelector", "selector": "input[type=password]", "timeout": 15000},
-        {"action": "fill",  "selector": "input[type=password]", "value": PASSWORD},
+        {"action": "fill", "selector": "input[type=password]", "value": PASSWORD},
         {"action": "click", "selector": "button[type=submit], button:has-text('Log in')"},
         # Wait for the first authenticated call to succeed — this is the "I'm logged in" signal.
-        {"action": "waitForResponse", "urlContains": "/api/v3/users/?only_self=true",
-         "status": 200, "timeout": 45000},
+        {
+            "action": "waitForResponse",
+            "urlContains": "/api/v3/users/?only_self=true",
+            "status": 200,
+            "timeout": 45000,
+        },
     ],
     "cookieDomains": ["app.mylighthouse.com"],
     "cookieNames": ["sessionid", "csrftoken"],

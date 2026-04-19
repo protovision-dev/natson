@@ -13,6 +13,7 @@ Design contract:
   - Idempotent: re-running the same (source, subject, competitor,
     stay_date, los, persons, observation_date) UPSERTs the row.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -21,16 +22,15 @@ import logging
 from decimal import Decimal
 from typing import Any
 
-from psycopg import sql
 from psycopg.types.json import Jsonb
 
 from .connection import get_conn
 from .mapping import (
-    source_code_for_ota,
-    parse_iso_dt,
-    parse_iso_date,
     coerce_decimal,
     now_utc,
+    parse_iso_date,
+    parse_iso_dt,
+    source_code_for_ota,
 )
 from .pricing import compute_all_in_price
 
@@ -40,6 +40,7 @@ _log = logging.getLogger(__name__)
 # ----------------------------------------------------------------------
 # public entry point
 # ----------------------------------------------------------------------
+
 
 def ingest_snapshot(snap: dict, job_id: str) -> int | None:
     """Persist one hotel's snapshot dict to Postgres.
@@ -66,19 +67,29 @@ def ingest_snapshot(snap: dict, job_id: str) -> int | None:
             _upsert_compset_members(conn, subject_hotel_id, own_hi, hi_to_pk)
 
             total = _insert_rate_rows(
-                conn, snap, scrape_run_id, source_id, subject_hotel_id, hi_to_pk,
+                conn,
+                snap,
+                scrape_run_id,
+                source_id,
+                subject_hotel_id,
+                hi_to_pk,
             )
             _insert_scrape_run_hotel(conn, scrape_run_id, subject_hotel_id, snap, total)
         return scrape_run_id
     except Exception as e:
-        _log.warning("ingest_snapshot failed for hotel=%s ota=%s: %s",
-                     snap.get("hotel_id"), snap.get("ota"), e)
+        _log.warning(
+            "ingest_snapshot failed for hotel=%s ota=%s: %s",
+            snap.get("hotel_id"),
+            snap.get("ota"),
+            e,
+        )
         return None
 
 
 # ----------------------------------------------------------------------
 # step helpers
 # ----------------------------------------------------------------------
+
 
 def _resolve_source_id(conn, ota: str) -> int:
     code = source_code_for_ota(ota)
@@ -101,7 +112,7 @@ def _upsert_scrape_run(conn, source_id: int, snap: dict, job_id: str) -> int:
     Concurrent-safe: different jobs get different rows on the same day.
     """
     scrape_date = parse_iso_date(snap.get("scrape_date"))
-    started_at  = parse_iso_dt(snap.get("scraped_at")) or now_utc()
+    started_at = parse_iso_dt(snap.get("scraped_at")) or now_utc()
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -133,8 +144,9 @@ def _resolve_subject_by_subscription(conn, subscription_id: str) -> int:
         return row[0]
 
 
-def _upsert_raw_payload(conn, scrape_run_id: int, source_id: int,
-                         subject_hotel_id: int, snap: dict) -> None:
+def _upsert_raw_payload(
+    conn, scrape_run_id: int, source_id: int, subject_hotel_id: int, snap: dict
+) -> None:
     """Store the snapshot dict (same shape as the JSON file on disk).
 
     Idempotent on (scrape_run_id, subject_hotel_id, los, persons).
@@ -155,8 +167,11 @@ def _upsert_raw_payload(conn, scrape_run_id: int, source_id: int,
                           stored_at      = NOW()
             """,
             (
-                scrape_run_id, subject_hotel_id, source_id,
-                int(snap["los"]), int(snap["persons"]),
+                scrape_run_id,
+                subject_hotel_id,
+                source_id,
+                int(snap["los"]),
+                int(snap["persons"]),
                 parse_iso_date(snap.get("scrape_date")),
                 Jsonb(snap),
                 sha,
@@ -212,7 +227,10 @@ def _upsert_hotels(conn, snap: dict) -> dict[str, int]:
 
 
 def _upsert_compset_members(
-    conn, subject_hotel_id: int, own_hi: str, hi_to_pk: dict[str, int],
+    conn,
+    subject_hotel_id: int,
+    own_hi: str,
+    hi_to_pk: dict[str, int],
 ) -> None:
     """UNION across sources — add any competitor we haven't seen active.
 
@@ -265,20 +283,20 @@ def _insert_rate_rows(
 
     Returns the number of rate cells persisted.
     """
-    los      = int(snap["los"])
-    persons  = int(snap["persons"])
+    los = int(snap["los"])
+    persons = int(snap["persons"])
     obs_date = parse_iso_date(snap.get("scrape_date"))
-    obs_ts   = parse_iso_dt(snap.get("scraped_at")) or now_utc()
+    obs_ts = parse_iso_dt(snap.get("scraped_at")) or now_utc()
 
     rates_list = snap.get("rates") or []
     total = 0
 
     with conn.cursor() as cur:
         for period in rates_list:
-            stay_date     = parse_iso_date(period.get("date"))
+            stay_date = parse_iso_date(period.get("date"))
             checkout_date = parse_iso_date(period.get("checkout_date"))
             leadtime_days = period.get("leadtime_days")
-            demand_pct    = coerce_decimal(period.get("market_demand_pct"))
+            demand_pct = coerce_decimal(period.get("market_demand_pct"))
             if stay_date is None:
                 continue
 
@@ -288,9 +306,20 @@ def _insert_rate_rows(
                     continue
 
                 row = _rate_row_values(
-                    snap, cell, stay_date, checkout_date,
-                    leadtime_days, demand_pct, los, persons, obs_date, obs_ts,
-                    source_id, subject_hotel_id, pk, scrape_run_id,
+                    snap,
+                    cell,
+                    stay_date,
+                    checkout_date,
+                    leadtime_days,
+                    demand_pct,
+                    los,
+                    persons,
+                    obs_date,
+                    obs_ts,
+                    source_id,
+                    subject_hotel_id,
+                    pk,
+                    scrape_run_id,
                 )
                 # Look up the prior-day rate for delta computation.
                 # Reading from rate_observations (not rates_current) and
@@ -349,9 +378,9 @@ def _rate_row_values(
     scrape_run_id: int,
 ) -> dict[str, Any]:
     """Flatten a cell + surrounding context into a uniform row dict."""
-    rate_value    = coerce_decimal(cell.get("value"))
-    shop_value    = coerce_decimal(cell.get("shop_value"))
-    all_in_price  = compute_all_in_price(cell)
+    rate_value = coerce_decimal(cell.get("value"))
+    shop_value = coerce_decimal(cell.get("shop_value"))
+    all_in_price = compute_all_in_price(cell)
 
     is_available = True
     msg = cell.get("message") or ""
@@ -359,73 +388,116 @@ def _rate_row_values(
         is_available = False
 
     return {
-        "observation_date":    obs_date,
-        "observation_ts":      obs_ts,
-        "source_id":           source_id,
-        "subject_hotel_id":    subject_hotel_id,
+        "observation_date": obs_date,
+        "observation_ts": obs_ts,
+        "source_id": source_id,
+        "subject_hotel_id": subject_hotel_id,
         "competitor_hotel_pk": competitor_hotel_pk,
-        "stay_date":           stay_date,
-        "checkout_date":       checkout_date,
-        "los":                 los,
-        "persons":             persons,
-        "rate_value":          rate_value,
-        "shop_value":          shop_value,
-        "all_in_price":        all_in_price,
-        "vat":                 coerce_decimal(cell.get("vat")),
-        "vat_incl":            cell.get("vat_incl"),
-        "city_tax":            coerce_decimal(cell.get("city_tax")),
-        "city_tax_incl":       cell.get("city_tax_incl"),
-        "other_taxes":         coerce_decimal(cell.get("other_taxes")),
-        "other_taxes_incl":    cell.get("other_taxes_incl"),
-        "room_name":           cell.get("room_name"),
-        "room_type":           cell.get("room_type"),
-        "cema_category":       cell.get("cema_category"),
-        "max_persons":         cell.get("max_persons"),
-        "mealtype_included":   cell.get("mealtype_included"),
-        "membershiptype":      cell.get("membershiptype"),
-        "best_flex":           cell.get("best_flex"),
-        "cancellable":         cell.get("cancellable"),
-        "cancellation":        cell.get("cancellation"),
-        "is_baserate":         cell.get("is_baserate"),
-        "is_out_of_sync":      cell.get("is_out_of_sync"),
-        "platform":            cell.get("platform"),
-        "is_available":        is_available,
-        "booking_url":         cell.get("booking_url"),
-        "extract_datetime":    parse_iso_dt(cell.get("extract_datetime")),
-        "message":             cell.get("message"),
-        "leadtime_days":       leadtime_days,
-        "market_demand_pct":   demand_pct,
-        "scrape_run_id":       scrape_run_id,
+        "stay_date": stay_date,
+        "checkout_date": checkout_date,
+        "los": los,
+        "persons": persons,
+        "rate_value": rate_value,
+        "shop_value": shop_value,
+        "all_in_price": all_in_price,
+        "vat": coerce_decimal(cell.get("vat")),
+        "vat_incl": cell.get("vat_incl"),
+        "city_tax": coerce_decimal(cell.get("city_tax")),
+        "city_tax_incl": cell.get("city_tax_incl"),
+        "other_taxes": coerce_decimal(cell.get("other_taxes")),
+        "other_taxes_incl": cell.get("other_taxes_incl"),
+        "room_name": cell.get("room_name"),
+        "room_type": cell.get("room_type"),
+        "cema_category": cell.get("cema_category"),
+        "max_persons": cell.get("max_persons"),
+        "mealtype_included": cell.get("mealtype_included"),
+        "membershiptype": cell.get("membershiptype"),
+        "best_flex": cell.get("best_flex"),
+        "cancellable": cell.get("cancellable"),
+        "cancellation": cell.get("cancellation"),
+        "is_baserate": cell.get("is_baserate"),
+        "is_out_of_sync": cell.get("is_out_of_sync"),
+        "platform": cell.get("platform"),
+        "is_available": is_available,
+        "booking_url": cell.get("booking_url"),
+        "extract_datetime": parse_iso_dt(cell.get("extract_datetime")),
+        "message": cell.get("message"),
+        "leadtime_days": leadtime_days,
+        "market_demand_pct": demand_pct,
+        "scrape_run_id": scrape_run_id,
     }
 
 
 _RO_COLS = [
-    "observation_date", "observation_ts", "source_id", "subject_hotel_id",
-    "competitor_hotel_pk", "stay_date", "checkout_date", "los", "persons",
-    "rate_value", "shop_value", "all_in_price",
-    "vat", "vat_incl", "city_tax", "city_tax_incl", "other_taxes", "other_taxes_incl",
-    "room_name", "room_type", "cema_category", "max_persons", "mealtype_included",
-    "membershiptype", "best_flex", "cancellable", "cancellation", "is_baserate",
-    "is_out_of_sync", "platform", "is_available", "booking_url",
-    "extract_datetime", "message", "leadtime_days", "market_demand_pct",
-    "prior_rate_value", "rate_delta", "changed_from_prior", "scrape_run_id",
+    "observation_date",
+    "observation_ts",
+    "source_id",
+    "subject_hotel_id",
+    "competitor_hotel_pk",
+    "stay_date",
+    "checkout_date",
+    "los",
+    "persons",
+    "rate_value",
+    "shop_value",
+    "all_in_price",
+    "vat",
+    "vat_incl",
+    "city_tax",
+    "city_tax_incl",
+    "other_taxes",
+    "other_taxes_incl",
+    "room_name",
+    "room_type",
+    "cema_category",
+    "max_persons",
+    "mealtype_included",
+    "membershiptype",
+    "best_flex",
+    "cancellable",
+    "cancellation",
+    "is_baserate",
+    "is_out_of_sync",
+    "platform",
+    "is_available",
+    "booking_url",
+    "extract_datetime",
+    "message",
+    "leadtime_days",
+    "market_demand_pct",
+    "prior_rate_value",
+    "rate_delta",
+    "changed_from_prior",
+    "scrape_run_id",
 ]
 
 
 def _upsert_rate_observation(cur, row: dict, prior_rate, rate_delta, changed: bool) -> None:
-    row = {**row,
-           "prior_rate_value":   prior_rate,
-           "rate_delta":         rate_delta,
-           "changed_from_prior": changed}
+    row = {
+        **row,
+        "prior_rate_value": prior_rate,
+        "rate_delta": rate_delta,
+        "changed_from_prior": changed,
+    }
     placeholders = ", ".join(["%s"] * len(_RO_COLS))
     cols = ", ".join(_RO_COLS)
 
     # The unique index excludes observation_id (auto-generated) so we
     # target the natural key.  Same-day re-scrape overwrites.
-    update_cols = [c for c in _RO_COLS if c not in (
-        "observation_date", "source_id", "subject_hotel_id",
-        "competitor_hotel_pk", "stay_date", "los", "persons",
-    )]
+    update_cols = [
+        c
+        for c in _RO_COLS
+        if c
+        not in (
+            "observation_date",
+            "source_id",
+            "subject_hotel_id",
+            "competitor_hotel_pk",
+            "stay_date",
+            "los",
+            "persons",
+        )
+    ]
     update_clause = ", ".join(f"{c} = EXCLUDED.{c}" for c in update_cols)
 
     cur.execute(
@@ -441,29 +513,56 @@ def _upsert_rate_observation(cur, row: dict, prior_rate, rate_delta, changed: bo
     )
 
 
-_RC_NATURAL = ("source_id", "subject_hotel_id", "competitor_hotel_pk",
-               "stay_date", "los", "persons")
+_RC_NATURAL = (
+    "source_id",
+    "subject_hotel_id",
+    "competitor_hotel_pk",
+    "stay_date",
+    "los",
+    "persons",
+)
 
 _RC_DATA_COLS = [
     "checkout_date",
-    "rate_value", "shop_value", "all_in_price",
-    "vat", "vat_incl", "city_tax", "city_tax_incl", "other_taxes", "other_taxes_incl",
-    "room_name", "room_type", "cema_category", "max_persons", "mealtype_included",
-    "membershiptype", "best_flex", "cancellable", "cancellation", "is_baserate",
-    "is_out_of_sync", "platform", "is_available", "booking_url",
-    "extract_datetime", "message", "leadtime_days", "market_demand_pct",
+    "rate_value",
+    "shop_value",
+    "all_in_price",
+    "vat",
+    "vat_incl",
+    "city_tax",
+    "city_tax_incl",
+    "other_taxes",
+    "other_taxes_incl",
+    "room_name",
+    "room_type",
+    "cema_category",
+    "max_persons",
+    "mealtype_included",
+    "membershiptype",
+    "best_flex",
+    "cancellable",
+    "cancellation",
+    "is_baserate",
+    "is_out_of_sync",
+    "platform",
+    "is_available",
+    "booking_url",
+    "extract_datetime",
+    "message",
+    "leadtime_days",
+    "market_demand_pct",
     "scrape_run_id",
 ]
 
 
 def _upsert_rates_current(cur, row: dict, changed: bool) -> None:
     now = row["observation_ts"]
-    cols = list(_RC_NATURAL) + _RC_DATA_COLS + [
-        "first_observed_at", "last_scraped_at", "last_changed_at"
-    ]
-    values = [row[c] for c in _RC_NATURAL] + [row[c] for c in _RC_DATA_COLS] + [
-        now, now, now
-    ]
+    cols = (
+        list(_RC_NATURAL)
+        + _RC_DATA_COLS
+        + ["first_observed_at", "last_scraped_at", "last_changed_at"]
+    )
+    values = [row[c] for c in _RC_NATURAL] + [row[c] for c in _RC_DATA_COLS] + [now, now, now]
     placeholders = ", ".join(["%s"] * len(cols))
     col_list = ", ".join(cols)
 
@@ -479,15 +578,16 @@ def _upsert_rates_current(cur, row: dict, changed: bool) -> None:
         f"""
         INSERT INTO rates_current ({col_list})
         VALUES ({placeholders})
-        ON CONFLICT ({', '.join(_RC_NATURAL)})
+        ON CONFLICT ({", ".join(_RC_NATURAL)})
         DO UPDATE SET {update_clause}
         """,
         values,
     )
 
 
-def _insert_scrape_run_hotel(conn, scrape_run_id: int, subject_hotel_id: int,
-                              snap: dict, rates_count: int) -> None:
+def _insert_scrape_run_hotel(
+    conn, scrape_run_id: int, subject_hotel_id: int, snap: dict, rates_count: int
+) -> None:
     # Grab duration from refreshes if present, else None.
     refreshes = snap.get("refreshes") or []
     total_refresh_s = sum((r.get("duration_s") or 0) for r in refreshes) or None
@@ -506,9 +606,13 @@ def _insert_scrape_run_hotel(conn, scrape_run_id: int, subject_hotel_id: int,
                           months_scraped= EXCLUDED.months_scraped
             """,
             (
-                scrape_run_id, subject_hotel_id,
-                int(snap["los"]), int(snap["persons"]),
-                "ok", total_refresh_s, rates_count,
+                scrape_run_id,
+                subject_hotel_id,
+                int(snap["los"]),
+                int(snap["persons"]),
+                "ok",
+                total_refresh_s,
+                rates_count,
                 _month_list_from_range(snap.get("date_range")),
                 None,
             ),
@@ -519,7 +623,8 @@ def _month_list_from_range(date_range) -> list[str] | None:
     """Return distinct YYYY-MM months touched by [from, to]."""
     if not date_range:
         return None
-    start = parse_iso_date(date_range[0]); end = parse_iso_date(date_range[1])
+    start = parse_iso_date(date_range[0])
+    end = parse_iso_date(date_range[1])
     if not start or not end:
         return None
     months: list[str] = []
@@ -529,5 +634,6 @@ def _month_list_from_range(date_range) -> list[str] | None:
         months.append(f"{y:04d}-{m:02d}")
         m += 1
         if m > 12:
-            y += 1; m = 1
+            y += 1
+            m = 1
     return months

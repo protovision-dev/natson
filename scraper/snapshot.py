@@ -12,10 +12,11 @@ WRITE_DB != "0", we then call `db.ingest_snapshot()`.  A DB failure is
 logged but never raised — the scrape always succeeds as long as the
 JSON lands.
 """
+
 import json
 import logging
 import os
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 from config import SNAPSHOTS_DIR
@@ -33,8 +34,9 @@ def _day_dir(scrape_date: str | date | None = None) -> Path:
     return d
 
 
-def _snapshot_filename(hotel_id: str, *, job_id: str | None, ota: str | None,
-                       ota_suffix: str) -> str:
+def _snapshot_filename(
+    hotel_id: str, *, job_id: str | None, ota: str | None, ota_suffix: str
+) -> str:
     if job_id:
         ota_part = f"_{ota}" if ota else ""
         return f"{hotel_id}{ota_part}_{job_id}.json"
@@ -63,6 +65,7 @@ def save_hotel_snapshot(
     if os.environ.get("WRITE_DB", "1") != "0" and job_id:
         try:
             from db import ingest_snapshot, pg_configured  # lazy import
+
             if pg_configured():
                 ingest_snapshot(data, job_id=job_id)
         except Exception as e:
@@ -71,15 +74,14 @@ def save_hotel_snapshot(
     return p
 
 
-def save_job_summary(job, results: list[dict],
-                     scrape_date: str | date | None = None) -> Path:
+def save_job_summary(job, results: list[dict], scrape_date: str | date | None = None) -> Path:
     """Write a summary index for one Job. Returns the file path."""
     d = _day_dir(scrape_date)
     payload = {
         "scrape_date": d.name,
         "job_id": job.job_id,
         "started_at": job.created_at,
-        "completed_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "completed_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "hotels_scraped": sum(1 for r in results if r.get("status") == "ok"),
         "hotels_failed": sum(1 for r in results if r.get("status") != "ok"),
         "spec": job.to_dict(),
@@ -92,15 +94,18 @@ def save_job_summary(job, results: list[dict],
 
 # --- Legacy helpers kept for one-off CLIs and Phase-2 compatibility ------
 
-def save_daily_summary(results: list[dict],
-                       started_at: str | None = None,
-                       scrape_date: str | date | None = None,
-                       ota_suffix: str = "") -> Path:
+
+def save_daily_summary(
+    results: list[dict],
+    started_at: str | None = None,
+    scrape_date: str | date | None = None,
+    ota_suffix: str = "",
+) -> Path:
     d = _day_dir(scrape_date)
     summary = {
         "scrape_date": d.name,
         "started_at": started_at,
-        "completed_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "completed_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "hotels_scraped": sum(1 for r in results if r.get("status") == "ok"),
         "hotels_failed": sum(1 for r in results if r.get("status") != "ok"),
         "results": results,
@@ -110,9 +115,9 @@ def save_daily_summary(results: list[dict],
     return p
 
 
-def load_hotel_snapshot(hotel_id: str,
-                        scrape_date: str | date | None = None,
-                        ota_suffix: str = "") -> dict | None:
+def load_hotel_snapshot(
+    hotel_id: str, scrape_date: str | date | None = None, ota_suffix: str = ""
+) -> dict | None:
     d = _day_dir(scrape_date)
     p = d / f"{hotel_id}{ota_suffix}.json"
     if not p.exists():
@@ -123,7 +128,4 @@ def load_hotel_snapshot(hotel_id: str,
 def list_snapshot_dates() -> list[str]:
     if not SNAPSHOTS_DIR.exists():
         return []
-    return sorted(
-        d.name for d in SNAPSHOTS_DIR.iterdir()
-        if d.is_dir() and len(d.name) == 10
-    )
+    return sorted(d.name for d in SNAPSHOTS_DIR.iterdir() if d.is_dir() and len(d.name) == 10)

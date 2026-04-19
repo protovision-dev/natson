@@ -4,18 +4,18 @@ Translates the scraper's OTA codes into `sources.source_code`, and
 normalizes per-cell / per-competitor fields into tuples ready to hand
 to psycopg.
 """
+
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
-
 
 # Lighthouse uses `bookingdotcom` / `branddotcom`.
 # The DB `sources.source_code` values are `booking` / `brand`.
 OTA_TO_SOURCE_CODE: dict[str, str] = {
     "bookingdotcom": "booking",
-    "branddotcom":   "brand",
+    "branddotcom": "brand",
 }
 
 
@@ -64,4 +64,4 @@ def coerce_decimal(v: Any) -> Decimal | None:
 
 
 def now_utc() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)

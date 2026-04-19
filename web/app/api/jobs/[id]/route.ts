@@ -5,10 +5,7 @@ import { fetchJob } from "@/lib/jobs";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(
-  _req: Request,
-  ctx: { params: Promise<{ id: string }> },
-) {
+export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 

@@ -6,19 +6,20 @@ Requires the browser-api service to be running.  In docker-compose,
 BROWSER_API defaults to http://browser-api:8765 (the compose service
 name).  On the host, set BROWSER_API=http://localhost:8765.
 """
+
 from __future__ import annotations
 
 import json
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import requests
 
 from config import BROWSER_API, SESSION_FILE
 
-SESSION_TTL_S = int(os.environ.get("SESSION_TTL_S", "86400"))   # 24h per api.md
+SESSION_TTL_S = int(os.environ.get("SESSION_TTL_S", "86400"))  # 24h per api.md
 
 
 def _build_payload(username: str, password: str) -> dict:
@@ -28,21 +29,26 @@ def _build_payload(username: str, password: str) -> dict:
         "initialWaitUntil": "networkidle",
         "steps": [
             {"action": "waitForSelector", "selector": "input[type=email]", "timeout": 30000},
-            {"action": "fill",  "selector": "input[type=email]", "value": username},
+            {"action": "fill", "selector": "input[type=email]", "value": username},
             {"action": "press", "selector": "input[type=email]", "key": "Enter"},
             {"action": "waitForSelector", "selector": "input[type=password]", "timeout": 15000},
-            {"action": "fill",  "selector": "input[type=password]", "value": password},
+            {"action": "fill", "selector": "input[type=password]", "value": password},
             {"action": "press", "selector": "input[type=password]", "key": "Enter"},
-            {"action": "waitForResponse", "urlContains": "/api/v3/users/?only_self=true",
-             "status": 200, "timeout": 45000},
+            {
+                "action": "waitForResponse",
+                "urlContains": "/api/v3/users/?only_self=true",
+                "status": 200,
+                "timeout": 45000,
+            },
         ],
         "cookieDomains": ["app.mylighthouse.com"],
         "cookieNames": ["sessionid", "csrftoken"],
     }
 
 
-def login(username: str | None = None, password: str | None = None,
-          out_path: Path | None = None) -> dict:
+def login(
+    username: str | None = None, password: str | None = None, out_path: Path | None = None
+) -> dict:
     """Perform the browser-api login flow and write session.json.
 
     Returns the session payload (same shape as the file).
@@ -56,8 +62,7 @@ def login(username: str | None = None, password: str | None = None,
     out_path = out_path or SESSION_FILE
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    r = requests.post(f"{BROWSER_API}/login", json=_build_payload(username, password),
-                      timeout=180)
+    r = requests.post(f"{BROWSER_API}/login", json=_build_payload(username, password), timeout=180)
     r.raise_for_status()
     resp = r.json()
     if not resp.get("success"):
@@ -66,10 +71,9 @@ def login(username: str | None = None, password: str | None = None,
     payload = {
         "user_agent": resp["userAgent"],
         "cookies": [
-            {"name": c["name"], "value": c["value"], "domain": c["domain"]}
-            for c in resp["cookies"]
+            {"name": c["name"], "value": c["value"], "domain": c["domain"]} for c in resp["cookies"]
         ],
-        "logged_in_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "logged_in_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "session_ttl_s": SESSION_TTL_S,
         "final_url": resp.get("finalUrl"),
     }
@@ -93,7 +97,7 @@ def session_age_s(path: Path | None = None) -> float | None:
         when = datetime.fromisoformat(ts)
     except Exception:
         return None
-    return (datetime.now(timezone.utc) - when).total_seconds()
+    return (datetime.now(UTC) - when).total_seconds()
 
 
 if __name__ == "__main__":
@@ -102,5 +106,7 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"[!] {e}", file=sys.stderr)
         sys.exit(1)
-    print(f"[*] wrote {SESSION_FILE} ({[c['name'] for c in data['cookies']]}) "
-          f"— finalUrl={data.get('final_url')}")
+    print(
+        f"[*] wrote {SESSION_FILE} ({[c['name'] for c in data['cookies']]}) "
+        f"— finalUrl={data.get('final_url')}"
+    )
