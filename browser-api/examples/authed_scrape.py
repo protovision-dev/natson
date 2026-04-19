@@ -3,9 +3,11 @@
 Combine with lighthouse_login.py to fetch a page that requires the SPA to
 hydrate, then hand the rendered HTML off for parsing.
 """
+
 import json
 import os
 import sys
+
 import requests
 
 API = os.environ.get("BROWSER_API", "http://localhost:8765")
@@ -14,7 +16,8 @@ if len(sys.argv) != 3:
     print("usage: authed_scrape.py <session.json> <url>", file=sys.stderr)
     sys.exit(2)
 
-sess = json.loads(open(sys.argv[1]).read())
+with open(sys.argv[1]) as _f:
+    sess = json.loads(_f.read())
 url = sys.argv[2]
 
 payload = {

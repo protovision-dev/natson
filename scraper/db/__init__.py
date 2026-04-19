@@ -8,6 +8,15 @@ When Postgres is unavailable or creds aren't set, writes silently
 no-op — the filesystem status.json is still authoritative, so a
 missing DB never fails a running scrape.
 """
-from .connection import get_conn, close_conn, pg_configured
-from .jobs import upsert_job_status
+
+from .connection import close_conn, get_conn, pg_configured
 from .ingest import ingest_snapshot
+from .jobs import upsert_job_status
+
+__all__ = [
+    "close_conn",
+    "get_conn",
+    "ingest_snapshot",
+    "pg_configured",
+    "upsert_job_status",
+]

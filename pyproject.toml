@@ -1,0 +1,69 @@
+[project]
+# Repo-level tooling config only — each Python service ships its own
+# requirements.txt; no monolithic project install. Ruff + mypy run
+# across scraper/, jobs-api/, browser-api/ via the configs below.
+name = "natsonhotels-tooling"
+version = "0"
+requires-python = ">=3.12"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["scraper", "jobs-api", "browser-api"]
+extend-exclude = [
+    "scraper/output",
+    "scraper/.venv",
+    "**/__pycache__",
+    "backups",
+    "web",
+    "node_modules",
+]
+
+[tool.ruff.lint]
+# E/F = pycodestyle + pyflakes (correctness)
+# I    = isort (import order)
+# B    = flake8-bugbear (likely bugs)
+# SIM  = flake8-simplify (readability)
+# UP   = pyupgrade (modern syntax)
+# RUF  = ruff-specific rules
+select = ["E", "F", "I", "B", "SIM", "UP", "RUF"]
+ignore = [
+    "E501",   # line length — handled by formatter
+    "B008",   # FastAPI Depends() default-arg pattern
+    "SIM105", # try/except/pass is clearer than contextlib.suppress here
+    "SIM108", # if/else is often clearer than a ternary at our line widths
+    "SIM103", # `return cond` instead of `if cond: return True; return False` — preference
+    "RUF001", # ambiguous unicode (× vs x) in scraper docs
+    "RUF002", # same, in docstrings
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Test files commonly use `assert` and import fixtures via *.
+"**/tests/**/*.py" = ["B011"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+check_untyped_defs = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+# Lenient for v1: catches obvious bugs without forcing a type-everything
+# rewrite of the existing scraper. Tighten gradually.
+disallow_untyped_defs = false
+no_implicit_optional = true
+# Skip generated/runtime dirs.
+exclude = [
+    "scraper/output",
+    "scraper/.venv",
+    "backups",
+    "web",
+]
+
+[[tool.mypy.overrides]]
+module = ["camoufox.*", "yaml.*", "psycopg.*"]
+ignore_missing_imports = true

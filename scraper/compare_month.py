@@ -6,14 +6,15 @@ High concurrency via ThreadPoolExecutor.
 Usage: .venv/bin/python compare_month.py [hotel_id] [month]
 Default: 345062 2026-05
 """
+
 import json
 import os
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import date, timedelta, datetime, timezone
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
-from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import requests
 
@@ -52,12 +53,21 @@ def lock_dates(url, checkin, los):
 
 def firecrawl_one(url):
     try:
-        r = requests.post(FIRECRAWL_URL,
-            headers={"Authorization": f"Bearer {FIRECRAWL_KEY}", "Content-Type": "application/json"},
-            json={"url": url, "formats": ["json"],
-                  "jsonOptions": {"prompt": EXTRACT_PROMPT, "schema": EXTRACT_SCHEMA},
-                  "onlyMainContent": True, "waitFor": 2500},
-            timeout=180)
+        r = requests.post(
+            FIRECRAWL_URL,
+            headers={
+                "Authorization": f"Bearer {FIRECRAWL_KEY}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "url": url,
+                "formats": ["json"],
+                "jsonOptions": {"prompt": EXTRACT_PROMPT, "schema": EXTRACT_SCHEMA},
+                "onlyMainContent": True,
+                "waitFor": 2500,
+            },
+            timeout=180,
+        )
         body = r.json()
         if body.get("success") and body.get("data", {}).get("json"):
             return body["data"]["json"]
@@ -83,20 +93,24 @@ for row in month_data["rates"]:
         base_url = comp.get("booking_base_url")
         if not base_url:
             continue
-        targets.append({
-            "date": d,
-            "hotelinfo_id": hi_id,
-            "name": comp.get("name"),
-            "is_own": comp.get("is_own", False),
-            "lh_value": cell.get("value"),
-            "lh_shop_value": cell.get("shop_value"),
-            "lh_room": cell.get("room_name"),
-            "lh_message": cell.get("message"),
-            "booking_url": lock_dates(base_url, d, LOS),
-        })
+        targets.append(
+            {
+                "date": d,
+                "hotelinfo_id": hi_id,
+                "name": comp.get("name"),
+                "is_own": comp.get("is_own", False),
+                "lh_value": cell.get("value"),
+                "lh_shop_value": cell.get("shop_value"),
+                "lh_room": cell.get("room_name"),
+                "lh_message": cell.get("message"),
+                "booking_url": lock_dates(base_url, d, LOS),
+            }
+        )
 
 print(f"[*] Hotel {HOTEL_ID} ({snapshot['hotel_name'][:50]})")
-print(f"[*] Month: {MONTH}  |  {len(month_data['rates'])} dates × {len(snapshot['competitors'])} competitors = {len(targets)} URLs")
+print(
+    f"[*] Month: {MONTH}  |  {len(month_data['rates'])} dates × {len(snapshot['competitors'])} competitors = {len(targets)} URLs"
+)
 print(f"[*] Concurrency: {CONCURRENCY}")
 print()
 
@@ -105,9 +119,11 @@ t0 = time.time()
 done = 0
 results = []
 
+
 def worker(t):
     ext = firecrawl_one(t["booking_url"])
     return {**t, "bc": ext}
+
 
 with ThreadPoolExecutor(max_workers=CONCURRENCY) as ex:
     futures = {ex.submit(worker, t): t for t in targets}
@@ -119,19 +135,31 @@ with ThreadPoolExecutor(max_workers=CONCURRENCY) as ex:
             elapsed = time.time() - t0
             rate = done / elapsed
             eta = (len(targets) - done) / rate if rate > 0 else 0
-            print(f"  [{done}/{len(targets)}]  {elapsed:.0f}s elapsed  {rate:.1f}/s  ETA {eta:.0f}s", flush=True)
+            print(
+                f"  [{done}/{len(targets)}]  {elapsed:.0f}s elapsed  {rate:.1f}/s  ETA {eta:.0f}s",
+                flush=True,
+            )
 
 elapsed = time.time() - t0
-print(f"\n[*] {len(results)} results in {elapsed:.0f}s ({len(results)/elapsed:.1f}/s)")
+print(f"\n[*] {len(results)} results in {elapsed:.0f}s ({len(results) / elapsed:.1f}/s)")
 
 # Save raw results
 out_path = Path(f"output/compare_month_{HOTEL_ID}_{MONTH}.json")
-out_path.write_text(json.dumps({
-    "hotel_id": HOTEL_ID, "month": MONTH, "method": "firecrawl",
-    "concurrency": CONCURRENCY, "elapsed_s": round(elapsed, 1),
-    "scraped_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-    "results": results,
-}, indent=2, default=str))
+out_path.write_text(
+    json.dumps(
+        {
+            "hotel_id": HOTEL_ID,
+            "month": MONTH,
+            "method": "firecrawl",
+            "concurrency": CONCURRENCY,
+            "elapsed_s": round(elapsed, 1),
+            "scraped_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+            "results": results,
+        },
+        indent=2,
+        default=str,
+    )
+)
 print(f"[*] saved to {out_path}")
 
 # Compare
@@ -143,7 +171,11 @@ by_date = {}
 for r in sorted(results, key=lambda x: (x["date"], x["name"])):
     lh = r["lh_shop_value"] or 0
     bc_ext = r["bc"]
-    bc = bc_ext.get("lowest_price_for_one_week") or 0 if isinstance(bc_ext, dict) and "error" not in bc_ext else 0
+    bc = (
+        bc_ext.get("lowest_price_for_one_week") or 0
+        if isinstance(bc_ext, dict) and "error" not in bc_ext
+        else 0
+    )
     bc_sold = bc_ext.get("sold_out", False) if isinstance(bc_ext, dict) else False
     err = bc_ext.get("error") if isinstance(bc_ext, dict) else None
 
@@ -184,7 +216,11 @@ for d in sorted(by_date):
     n_far = sum(1 for s in statuses if s == "FAR")
     n_sold = sum(1 for s in statuses if s == "SOLD")
     n_err = sum(1 for s in statuses if s in ("ERR", "noLH"))
-    print(f"  {d}  OK={n_ok}  close={n_close}  far={n_far}  sold={n_sold}  err={n_err}  / {len(statuses)}")
+    print(
+        f"  {d}  OK={n_ok}  close={n_close}  far={n_far}  sold={n_sold}  err={n_err}  / {len(statuses)}"
+    )
 
 total = len(results)
-print(f"\nTotal: {total}  OK: {ok} ({ok/total*100:.0f}%)  Close: {close}  Far: {far}  Sold: {sold}  Missing: {miss}")
+print(
+    f"\nTotal: {total}  OK: {ok} ({ok / total * 100:.0f}%)  Close: {close}  Far: {far}  Sold: {sold}  Missing: {miss}"
+)

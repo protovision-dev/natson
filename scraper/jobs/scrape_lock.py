@@ -20,18 +20,19 @@ Lock-filename convention is `{job_id}.lock` so the file is human-
 readable and traceable to a specific Job; multiple concurrent scrapes
 each get their own file (no refcounting needed).
 """
+
 from __future__ import annotations
 
 import json
 import os
 import time
 from contextlib import AbstractContextManager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 def locks_dir(out_dir: Path) -> Path:
@@ -52,8 +53,8 @@ class ScrapeLock(AbstractContextManager):
     def __init__(self, out_dir: Path, job_id: str, meta: dict | None = None):
         self.path = locks_dir(out_dir) / f"{job_id}.lock"
         self.meta = {
-            "job_id":     job_id,
-            "pid":        os.getpid(),
+            "job_id": job_id,
+            "pid": os.getpid(),
             "started_at": _now_iso(),
             **(meta or {}),
         }
@@ -67,7 +68,7 @@ class ScrapeLock(AbstractContextManager):
             self.path.unlink(missing_ok=True)
         except Exception:
             pass
-        return False   # don't swallow exceptions
+        return False  # don't swallow exceptions
 
 
 def active_scrapes(out_dir: Path, stale_after_s: float = 7200.0) -> list[dict]:

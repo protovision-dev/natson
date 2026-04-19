@@ -18,30 +18,33 @@ Caches (subscription meta, hotelinfo meta, per-(hotel,hotelinfo) OTA
 redirect URLs) live in dicts owned by the caller (run_job.py), which
 loads/saves them once per invocation from output/cache/.
 """
+
 from __future__ import annotations
 
 import json
 import time
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta, timezone
-from pathlib import Path
-from urllib.parse import urlencode
+from datetime import UTC, date, datetime, timedelta
 
 import requests
 
 from config import (
-    API_BASE, RATES_API, HOTELS_API, HOTELINFOS_API, REDIRECT_API,
-    OUT_DIR, SESSION_FILE, POLITE_SLEEP,
+    API_BASE,
+    HOTELINFOS_API,
+    HOTELS_API,
+    POLITE_SLEEP,
+    REDIRECT_API,
+    SESSION_FILE,
     build_rates_api_url,
     swap_dates,
 )
 
 DEMAND_API = f"{API_BASE}/apigateway/v1/app/demand/ari/demands/"
 
-from refresh import refresh_and_wait
-
+from refresh import refresh_and_wait  # noqa: E402  (must follow API_BASE definition)
 
 # -------- API helpers ---------------------------------------------------
+
 
 def make_session() -> requests.Session:
     """Build a requests.Session from the shared session.json cookie file."""
@@ -49,24 +52,50 @@ def make_session() -> requests.Session:
     s = requests.Session()
     for c in s_data["cookies"]:
         s.cookies.set(c["name"], c["value"], domain=c["domain"], path=c.get("path", "/"))
-    s.headers.update({
-        "User-Agent": s_data["user_agent"],
-        "Accept": "application/json, text/plain, */*",
-        "Origin": API_BASE,
-    })
+    s.headers.update(
+        {
+            "User-Agent": s_data["user_agent"],
+            "Accept": "application/json, text/plain, */*",
+            "Origin": API_BASE,
+        }
+    )
     return s
 
 
-def fetch_rates_range(sess, hotel_id, from_date, to_date, *, ota, compset_id,
-                      los, persons, mealtype, membershiptype, platform,
-                      roomtype, bar, flexible, rate_type, meta):
+def fetch_rates_range(
+    sess,
+    hotel_id,
+    from_date,
+    to_date,
+    *,
+    ota,
+    compset_id,
+    los,
+    persons,
+    mealtype,
+    membershiptype,
+    platform,
+    roomtype,
+    bar,
+    flexible,
+    rate_type,
+    meta,
+):
     url = build_rates_api_url(
         hotel_id,
         from_date=from_date.isoformat() if isinstance(from_date, date) else from_date,
         to_date=to_date.isoformat() if isinstance(to_date, date) else to_date,
-        compset_id=compset_id, los=los, persons=persons, ota=ota,
-        mealtype=mealtype, membershiptype=membershiptype, platform=platform,
-        roomtype=roomtype, bar=bar, flexible=flexible, rate_type=rate_type,
+        compset_id=compset_id,
+        los=los,
+        persons=persons,
+        ota=ota,
+        mealtype=mealtype,
+        membershiptype=membershiptype,
+        platform=platform,
+        roomtype=roomtype,
+        bar=bar,
+        flexible=flexible,
+        rate_type=rate_type,
         meta=meta,
     )
     r = sess.get(url, headers={"Referer": f"{API_BASE}/hotel/{hotel_id}/rates"}, timeout=60)
@@ -91,11 +120,15 @@ def fetch_hotelinfo(sess, hotelinfo_id):
 
 def fetch_demand(sess, hotel_id, from_date, to_date):
     """Market demand scores for a hotel over [from,to]. Returns {iso_date: pct}."""
-    r = sess.get(DEMAND_API, params={
-        "from_date_range_start": from_date,
-        "from_date_range_end": to_date,
-        "subscription_id": hotel_id,
-    }, timeout=30)
+    r = sess.get(
+        DEMAND_API,
+        params={
+            "from_date_range_start": from_date,
+            "from_date_range_end": to_date,
+            "subscription_id": hotel_id,
+        },
+        timeout=30,
+    )
     r.raise_for_status()
     out = {}
     for d in r.json().get("demands", []):
@@ -105,14 +138,24 @@ def fetch_demand(sess, hotel_id, from_date, to_date):
     return out
 
 
-def resolve_booking_base_url(sess, hotel_id, hotelinfo_id, seed_date, los,
-                              persons, ota):
-    r = sess.get(REDIRECT_API, params={
-        "ota": ota, "hotelId": hotelinfo_id, "direct": "false",
-        "fromDate": seed_date, "los": los, "persons": persons,
-        "city": "false", "subscription_id": hotel_id, "pos": "",
-        "source": "app_rates",
-    }, allow_redirects=True, timeout=30)
+def resolve_booking_base_url(sess, hotel_id, hotelinfo_id, seed_date, los, persons, ota):
+    r = sess.get(
+        REDIRECT_API,
+        params={
+            "ota": ota,
+            "hotelId": hotelinfo_id,
+            "direct": "false",
+            "fromDate": seed_date,
+            "los": los,
+            "persons": persons,
+            "city": "false",
+            "subscription_id": hotel_id,
+            "pos": "",
+            "source": "app_rates",
+        },
+        allow_redirects=True,
+        timeout=30,
+    )
     # /redirect returns the Lighthouse URL unchanged on failure; ignore those.
     if r.url and r.url.startswith("http") and "mylighthouse.com" not in r.url:
         return r.url
@@ -127,14 +170,31 @@ def pick_primary_rate(records):
 
 
 _SLIM_KEYS = [
-    "value", "currency", "shop_value", "shop_currency",
-    "room_name", "room_type", "cema_category",
-    "best_flex", "cancellable", "cancellation",
-    "city_tax", "vat", "other_taxes",
-    "city_tax_incl", "vat_incl", "other_taxes_incl",
-    "extract_datetime", "is_out_of_sync", "max_persons",
-    "message", "platform", "membershiptype", "mealtype_included",
-    "is_baserate", "difference_with_baserate",
+    "value",
+    "currency",
+    "shop_value",
+    "shop_currency",
+    "room_name",
+    "room_type",
+    "cema_category",
+    "best_flex",
+    "cancellable",
+    "cancellation",
+    "city_tax",
+    "vat",
+    "other_taxes",
+    "city_tax_incl",
+    "vat_incl",
+    "other_taxes_incl",
+    "extract_datetime",
+    "is_out_of_sync",
+    "max_persons",
+    "message",
+    "platform",
+    "membershiptype",
+    "mealtype_included",
+    "is_baserate",
+    "difference_with_baserate",
 ]
 
 
@@ -144,14 +204,16 @@ def slim_rate(r):
 
 # -------- Caches --------------------------------------------------------
 
+
 @dataclass
 class Caches:
-    hotels: dict                       # subscription_id -> /api/v3/hotels row
-    hotelinfos: dict                   # hotelinfo_id -> /api/v3/hotelinfos row
-    booking_urls: dict                 # "<subscription>:<hotelinfo>" -> OTA URL
+    hotels: dict  # subscription_id -> /api/v3/hotels row
+    hotelinfos: dict  # hotelinfo_id -> /api/v3/hotelinfos row
+    booking_urls: dict  # "<subscription>:<hotelinfo>" -> OTA URL
 
 
 # -------- The main entry point -------------------------------------------
+
 
 def scrape_hotel(sess: requests.Session, job, hotel_id: str, caches: Caches) -> dict:
     """Execute one hotel's share of a Job and return a snapshot dict.
@@ -162,7 +224,7 @@ def scrape_hotel(sess: requests.Session, job, hotel_id: str, caches: Caches) -> 
     scrape_date = date.today().isoformat()
     snap: dict = {
         "scrape_date": scrape_date,
-        "scraped_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "scraped_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "job_id": job.job_id,
         "hotel_id": hotel_id,
         "ota": job.ota,
@@ -195,12 +257,21 @@ def scrape_hotel(sess: requests.Session, job, hotel_id: str, caches: Caches) -> 
     if job.do_refresh or job.refresh_only:
         for fd, td in job.refresh_windows():
             res = refresh_and_wait(
-                sess, hotel_id, fd, td,
-                ota=job.ota, compset_id=job.compset_id,
-                los=job.los, persons=job.persons,
-                mealtype=job.mealtype, membershiptype=job.membershiptype,
-                platform=job.platform, roomtype=job.roomtype,
-                bar=job.bar, flexible=job.flexible, rate_type=job.rate_type,
+                sess,
+                hotel_id,
+                fd,
+                td,
+                ota=job.ota,
+                compset_id=job.compset_id,
+                los=job.los,
+                persons=job.persons,
+                mealtype=job.mealtype,
+                membershiptype=job.membershiptype,
+                platform=job.platform,
+                roomtype=job.roomtype,
+                bar=job.bar,
+                flexible=job.flexible,
+                rate_type=job.rate_type,
             )
             refresh_results.append(res)
     snap["refreshes"] = refresh_results
@@ -213,11 +284,22 @@ def scrape_hotel(sess: requests.Session, job, hotel_id: str, caches: Caches) -> 
     # --- Rates fetch for the full date span, one call ---
     from_d, to_d = job.date_range()
     api_url, body = fetch_rates_range(
-        sess, hotel_id, from_d, to_d,
-        ota=job.ota, compset_id=job.compset_id, los=job.los, persons=job.persons,
-        mealtype=job.mealtype, membershiptype=job.membershiptype,
-        platform=job.platform, roomtype=job.roomtype,
-        bar=job.bar, flexible=job.flexible, rate_type=job.rate_type, meta=job.meta,
+        sess,
+        hotel_id,
+        from_d,
+        to_d,
+        ota=job.ota,
+        compset_id=job.compset_id,
+        los=job.los,
+        persons=job.persons,
+        mealtype=job.mealtype,
+        membershiptype=job.membershiptype,
+        platform=job.platform,
+        roomtype=job.roomtype,
+        bar=job.bar,
+        flexible=job.flexible,
+        rate_type=job.rate_type,
+        meta=job.meta,
     )
     snap["api_url"] = api_url
 
@@ -231,7 +313,7 @@ def scrape_hotel(sess: requests.Session, job, hotel_id: str, caches: Caches) -> 
     wanted_dates = {d.isoformat() for d in job.checkin_dates}
     all_hotelinfo_ids: set[str] = set()
     for period in body.get("periods", []):
-        for hid in (period.get("rates") or {}).keys():
+        for hid in period.get("rates") or {}:
             all_hotelinfo_ids.add(str(hid))
     if own_hi:
         all_hotelinfo_ids.add(own_hi)
@@ -244,13 +326,21 @@ def scrape_hotel(sess: requests.Session, job, hotel_id: str, caches: Caches) -> 
 
     # --- OTA base URLs per (hotel, hotelinfo) (cached) ---
     # Cache key includes ota because /redirect returns different URLs per OTA.
-    seed_date = next((p.get("from_date") for p in body.get("periods", []) if p.get("from_date")), None)
+    seed_date = next(
+        (p.get("from_date") for p in body.get("periods", []) if p.get("from_date")), None
+    )
     for hi in sorted(all_hotelinfo_ids):
         key = f"{hotel_id}:{hi}:{job.ota}"
         if key not in caches.booking_urls and seed_date:
             try:
                 url = resolve_booking_base_url(
-                    sess, hotel_id, hi, seed_date, job.los, job.persons, job.ota,
+                    sess,
+                    hotel_id,
+                    hi,
+                    seed_date,
+                    job.los,
+                    job.persons,
+                    job.ota,
                 )
             except Exception:
                 url = None
@@ -291,13 +381,15 @@ def scrape_hotel(sess: requests.Session, job, hotel_id: str, caches: Caches) -> 
             cell["booking_url"] = swap_dates(base_url, d, job.los) if base_url and d else None
             hotels_cells[str(hi_id)] = cell
             total_rates += 1
-        rates_list.append({
-            "date": d,
-            "checkout_date": checkout,
-            "leadtime_days": period.get("leadtime"),
-            "market_demand_pct": demand_by_date.get(d),
-            "hotels": hotels_cells,
-        })
+        rates_list.append(
+            {
+                "date": d,
+                "checkout_date": checkout,
+                "leadtime_days": period.get("leadtime"),
+                "market_demand_pct": demand_by_date.get(d),
+                "hotels": hotels_cells,
+            }
+        )
 
     snap["date_range"] = [from_d.isoformat(), to_d.isoformat()]
     snap["rates"] = rates_list

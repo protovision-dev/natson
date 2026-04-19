@@ -6,17 +6,17 @@ Polls /api/v3/liveupdates/ until the job finishes.
 
 See api.md §4 "Rate Refresh (Live Shop)" for full endpoint documentation.
 """
+
 import json
 import sys
 import time
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 
 import requests
 
 from config import (
-    LIVEUPDATES_API,
     API_BASE,
-    POLITE_SLEEP,
+    LIVEUPDATES_API,
     REFRESH_POLL_INTERVAL_S,
     REFRESH_POLL_TIMEOUT_S,
 )
@@ -158,15 +158,26 @@ def refresh_and_wait(
     fd = from_date.isoformat() if isinstance(from_date, date) else from_date
     td = to_date.isoformat() if isinstance(to_date, date) else to_date
 
-    triggered_at = datetime.now(timezone.utc)
+    triggered_at = datetime.now(UTC)
     print(f"  [refresh] hotel={hotel_id} ota={ota} from={fd} to={td} triggering...", flush=True)
 
     try:
         resp = trigger_refresh(
-            sess, hotel_id, fd, td,
-            ota=ota, compset_id=compset_id, los=los, persons=persons,
-            mealtype=mealtype, membershiptype=membershiptype, platform=platform,
-            roomtype=roomtype, bar=bar, flexible=flexible, rate_type=rate_type,
+            sess,
+            hotel_id,
+            fd,
+            td,
+            ota=ota,
+            compset_id=compset_id,
+            los=los,
+            persons=persons,
+            mealtype=mealtype,
+            membershiptype=membershiptype,
+            platform=platform,
+            roomtype=roomtype,
+            bar=bar,
+            flexible=flexible,
+            rate_type=rate_type,
         )
     except requests.HTTPError as e:
         print(f"  [refresh] trigger failed: {e}", flush=True)
@@ -175,21 +186,25 @@ def refresh_and_wait(
             "completed_at": None,
             "duration_s": None,
             "success": False,
-            "from": fd, "to": td,
+            "from": fd,
+            "to": td,
             "error": str(e),
         }
 
     jobs = resp.get("liveupdates", [])
     if jobs:
         job = jobs[0]
-        print(f"  [refresh] job id={job.get('id')} from={job.get('from_date')} "
-              f"to={job.get('to_date')} days={job.get('nr_of_days')} "
-              f"status={job.get('status')}", flush=True)
+        print(
+            f"  [refresh] job id={job.get('id')} from={job.get('from_date')} "
+            f"to={job.get('to_date')} days={job.get('nr_of_days')} "
+            f"status={job.get('status')}",
+            flush=True,
+        )
     else:
         print("  [refresh] no job returned (may already be fresh)", flush=True)
 
     ok = poll_until_complete(sess, hotel_id, poll_interval, poll_timeout)
-    completed_at = datetime.now(timezone.utc)
+    completed_at = datetime.now(UTC)
     duration = (completed_at - triggered_at).total_seconds()
 
     print(f"  [refresh] {'done' if ok else 'timed out'} in {duration:.0f}s", flush=True)
@@ -198,7 +213,8 @@ def refresh_and_wait(
         "completed_at": completed_at.isoformat() if ok else None,
         "duration_s": round(duration, 1),
         "success": ok,
-        "from": fd, "to": td,
+        "from": fd,
+        "to": td,
     }
 
 
@@ -212,6 +228,7 @@ if __name__ == "__main__":
         sys.exit(2)
 
     from config import SESSION_FILE
+
     hotel_id = sys.argv[1]
     month = sys.argv[2]
     fd, td = _month_bounds(month)
@@ -220,10 +237,12 @@ if __name__ == "__main__":
     sess = requests.Session()
     for c in s_data["cookies"]:
         sess.cookies.set(c["name"], c["value"], domain=c["domain"])
-    sess.headers.update({
-        "User-Agent": s_data["user_agent"],
-        "Accept": "application/json, text/plain, */*",
-        "Origin": API_BASE,
-    })
+    sess.headers.update(
+        {
+            "User-Agent": s_data["user_agent"],
+            "Accept": "application/json, text/plain, */*",
+            "Origin": API_BASE,
+        }
+    )
 
     print(json.dumps(refresh_and_wait(sess, hotel_id, fd, td), indent=2))

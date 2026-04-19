@@ -9,6 +9,7 @@ Paced conservatively with a random delay between requests to avoid tripping
 Booking.com's bot detection. Stops the run early if several consecutive
 requests come back looking like a challenge page.
 """
+
 import json
 import os
 import random
@@ -17,9 +18,9 @@ import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from urllib.parse import urlencode, urlsplit, urlunsplit, parse_qsl
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import requests
 
@@ -84,10 +85,10 @@ TIMEOUT_MS = int(os.environ.get("TIMEOUT_MS", "90000"))
 # to appear on a normal Booking hotel page. (Generic words like "captcha" or
 # "chal_t" appear in embedded URL templates on legitimate pages.)
 BLOCK_MARKERS = [
-    "AwsWafIntegration",         # AWS WAF JS challenge page
+    "AwsWafIntegration",  # AWS WAF JS challenge page
     'id="challenge-container"',  # challenge DOM node
-    "cf-browser-verification",   # Cloudflare's JS challenge
-    "Pardon our interruption",   # Booking/Akamai's block interstitial
+    "cf-browser-verification",  # Cloudflare's JS challenge
+    "Pardon our interruption",  # Booking/Akamai's block interstitial
 ]
 
 OUT_FILE = OUT / "booking_direct.json"
@@ -146,20 +147,22 @@ def collect_urls() -> list[dict]:
                 continue
 
             seen_slugs.add(slug)
-            out.append({
-                "subscription_hotel_id": sub["hotel_id"],
-                "subscription_hotel_name": sub["hotel_name"],
-                "hotelinfo_id": hi_id,
-                "property_name": names.get(hi_id, "?"),
-                "checkin": CHECKIN,
-                "checkout": CHECKOUT,
-                "booking_url": lock_dates(base_url, CHECKIN, CHECKOUT),
-                "lighthouse_value_per_night": lh_rate.get("value"),
-                "lighthouse_shop_value": lh_rate.get("shop_value"),
-                "lighthouse_currency": lh_rate.get("currency"),
-                "lighthouse_room_name": lh_rate.get("room_name"),
-                "lighthouse_message": lh_rate.get("message"),
-            })
+            out.append(
+                {
+                    "subscription_hotel_id": sub["hotel_id"],
+                    "subscription_hotel_name": sub["hotel_name"],
+                    "hotelinfo_id": hi_id,
+                    "property_name": names.get(hi_id, "?"),
+                    "checkin": CHECKIN,
+                    "checkout": CHECKOUT,
+                    "booking_url": lock_dates(base_url, CHECKIN, CHECKOUT),
+                    "lighthouse_value_per_night": lh_rate.get("value"),
+                    "lighthouse_shop_value": lh_rate.get("shop_value"),
+                    "lighthouse_currency": lh_rate.get("currency"),
+                    "lighthouse_room_name": lh_rate.get("room_name"),
+                    "lighthouse_message": lh_rate.get("message"),
+                }
+            )
     return out
 
 
@@ -180,12 +183,27 @@ def browser_scrape(url: str) -> dict:
     except Exception as e:
         return {"status": 0, "html": "", "finalUrl": "", "error": f"{type(e).__name__}: {e}"}
     if r.status_code != 200:
-        return {"status": r.status_code, "html": "", "finalUrl": "", "error": f"HTTP {r.status_code}: {r.text[:200]}"}
+        return {
+            "status": r.status_code,
+            "html": "",
+            "finalUrl": "",
+            "error": f"HTTP {r.status_code}: {r.text[:200]}",
+        }
     body = r.json()
     if not body.get("success"):
-        return {"status": r.status_code, "html": "", "finalUrl": "", "error": body.get("error") or "unknown"}
+        return {
+            "status": r.status_code,
+            "html": "",
+            "finalUrl": "",
+            "error": body.get("error") or "unknown",
+        }
     data = body["data"]
-    return {"status": 200, "html": data["rawHtml"], "finalUrl": data.get("finalUrl") or "", "error": None}
+    return {
+        "status": 200,
+        "html": data["rawHtml"],
+        "finalUrl": data.get("finalUrl") or "",
+        "error": None,
+    }
 
 
 def _walk_brackets(html: str, start: int, open_char: str, close_char: str) -> int:
@@ -249,7 +267,8 @@ def extract_ld_json(html: str) -> list[dict]:
     out = []
     for m in re.finditer(
         r"<script[^>]*type=[\"']application/ld\+json[\"'][^>]*>(.*?)</script>",
-        html, re.S | re.I,
+        html,
+        re.S | re.I,
     ):
         try:
             out.append(json.loads(m.group(1).strip()))
@@ -262,8 +281,9 @@ def extract_meta_tags(html: str) -> dict:
     """<meta name=... / property=... content=...> pairs that are cheap signal."""
     out: dict = {}
     for m in re.finditer(
-        r'<meta\s+(?:name|property)=[\"\']([^\"\']+)[\"\']\s+content=[\"\']([^\"\']*)[\"\']',
-        html, re.I,
+        r"<meta\s+(?:name|property)=[\"\']([^\"\']+)[\"\']\s+content=[\"\']([^\"\']*)[\"\']",
+        html,
+        re.I,
     ):
         out[m.group(1)] = m.group(2)
     return out
@@ -275,16 +295,20 @@ def extract_hprt_rows(html: str) -> list[dict]:
     rows = []
     for m in re.finditer(r"<tr[^>]*js-rt-block-row[^>]*>", html):
         row_html = m.group(0)
-        attrs = dict(re.findall(r'(data-[\w-]+)=[\"\']([^\"\']*)[\"\']', row_html))
+        attrs = dict(re.findall(r"(data-[\w-]+)=[\"\']([^\"\']*)[\"\']", row_html))
         rows.append(attrs)
     return rows
 
 
 def extract_photos(html: str) -> list[str]:
-    return sorted(set(re.findall(
-        r"https?://[a-z0-9.-]+bstatic\.com/xdata/images/hotel/[a-zA-Z0-9_/.-]+\.(?:jpg|webp)",
-        html,
-    )))[:50]
+    return sorted(
+        set(
+            re.findall(
+                r"https?://[a-z0-9.-]+bstatic\.com/xdata/images/hotel/[a-zA-Z0-9_/.-]+\.(?:jpg|webp)",
+                html,
+            )
+        )
+    )[:50]
 
 
 def extract_everything(html: str) -> dict:
@@ -357,13 +381,19 @@ def looks_blocked(html: str, final_url: str) -> bool:
 
 
 def save(results: list) -> None:
-    OUT_FILE.write_text(json.dumps({
-        "scraped_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-        "checkin": CHECKIN,
-        "checkout": CHECKOUT,
-        "pacing_seconds": [DELAY_MIN_S, DELAY_MAX_S],
-        "results": results,
-    }, indent=2, default=str))
+    OUT_FILE.write_text(
+        json.dumps(
+            {
+                "scraped_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+                "checkin": CHECKIN,
+                "checkout": CHECKOUT,
+                "pacing_seconds": [DELAY_MIN_S, DELAY_MAX_S],
+                "results": results,
+            },
+            indent=2,
+            default=str,
+        )
+    )
 
 
 def main() -> int:
@@ -402,7 +432,9 @@ def main() -> int:
         if html:
             (HTML_DIR / f"{stem}.html").write_text(html)
         everything = extract_everything(html) if not blocked and html else None
-        summary = summarize_blob(everything["rooms"]) if everything and everything["rooms"] else None
+        summary = (
+            summarize_blob(everything["rooms"]) if everything and everything["rooms"] else None
+        )
         if everything:
             (RAW_DIR / f"{stem}.json").write_text(json.dumps(everything, indent=2, default=str))
 
@@ -438,11 +470,13 @@ def main() -> int:
             "browser_extracted": summary,
             "html_file": f"booking_html/{stem}.html" if html else None,
             "raw_file": f"booking_raw/{stem}.json" if everything else None,
-            "extracted_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "extracted_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         }
 
     results: list[dict] = []
-    print(f"[*] concurrency={CONCURRENCY}  waitFor={WAIT_FOR_MS}ms  delay={DELAY_MIN_S}-{DELAY_MAX_S}s")
+    print(
+        f"[*] concurrency={CONCURRENCY}  waitFor={WAIT_FOR_MS}ms  delay={DELAY_MIN_S}-{DELAY_MAX_S}s"
+    )
     with ThreadPoolExecutor(max_workers=CONCURRENCY) as ex:
         futures = [ex.submit(worker, t) for t in targets]
         for i, fut in enumerate(as_completed(futures), 1):
@@ -454,17 +488,28 @@ def main() -> int:
                 # Let in-flight workers finish; don't submit more (they're already submitted).
                 pass
     if abort.is_set():
-        print(f"\n[!] {state['blocks']} blocked responses — aborting; partial output written.", flush=True)
+        print(
+            f"\n[!] {state['blocks']} blocked responses — aborting; partial output written.",
+            flush=True,
+        )
         save(results)
         return 3
 
     save(results)
-    n_ok = sum(1 for r in results if r.get("browser_extracted") and not r["browser_extracted"]["sold_out"])
-    n_sold = sum(1 for r in results if r.get("browser_extracted") and r["browser_extracted"]["sold_out"])
+    n_ok = sum(
+        1 for r in results if r.get("browser_extracted") and not r["browser_extracted"]["sold_out"]
+    )
+    n_sold = sum(
+        1 for r in results if r.get("browser_extracted") and r["browser_extracted"]["sold_out"]
+    )
     n_blocked = sum(1 for r in results if r.get("browser_blocked"))
-    n_weird = sum(1 for r in results if r.get("browser_extracted") is None and not r.get("browser_blocked"))
+    n_weird = sum(
+        1 for r in results if r.get("browser_extracted") is None and not r.get("browser_blocked")
+    )
     print(f"\n[*] wrote {OUT_FILE}")
-    print(f"    priced: {n_ok}   sold out: {n_sold}   blocked: {n_blocked}   no-blob: {n_weird}   total: {len(results)}")
+    print(
+        f"    priced: {n_ok}   sold out: {n_sold}   blocked: {n_blocked}   no-blob: {n_weird}   total: {len(results)}"
+    )
     return 0 if (n_ok + n_sold) == len(results) else 1
 
 

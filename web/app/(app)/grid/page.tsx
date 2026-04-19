@@ -1,9 +1,4 @@
-import {
-  fetchAvailableMonths,
-  fetchGrid,
-  fetchSources,
-  fetchSubjects,
-} from "@/lib/queries";
+import { fetchAvailableMonths, fetchGrid, fetchSources, fetchSubjects } from "@/lib/queries";
 import { RateGrid } from "@/components/RateGrid";
 import { LastUpdatedCard } from "@/components/LastUpdatedCard";
 import { FilterBar } from "@/components/FilterBar";
@@ -38,11 +33,7 @@ function monthBounds(ym: string): { from: string; to: string } {
   return { from: `${ym}-01`, to: `${ym}-${lastDay}` };
 }
 
-export default async function GridPage({
-  searchParams,
-}: {
-  searchParams: Promise<Search>;
-}) {
+export default async function GridPage({ searchParams }: { searchParams: Promise<Search> }) {
   const sp = await searchParams;
   const [subjects, sources] = await Promise.all([fetchSubjects(), fetchSources()]);
 
@@ -54,8 +45,7 @@ export default async function GridPage({
   if (!subject) {
     return (
       <div className="p-8 text-sm text-subtle">
-        No subject hotels found. Run a scrape first to populate{" "}
-        <code>subject_hotels</code>.
+        No subject hotels found. Run a scrape first to populate <code>subject_hotels</code>.
       </div>
     );
   }

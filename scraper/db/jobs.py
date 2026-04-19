@@ -2,13 +2,13 @@
 
 Table defined in db/init/02_scrape_jobs.sql.  Used by run_job.py.
 """
+
 from __future__ import annotations
 
 import json
 import socket
 
 from .connection import get_conn
-
 
 _UPSERT_SQL = """
 INSERT INTO scrape_jobs (
@@ -55,26 +55,26 @@ def upsert_job_status(payload: dict) -> bool:
     spec = payload.get("spec") or {}
     checkins = spec.get("checkin_dates") or []
     row = {
-        "job_id":        payload["job_id"],
-        "state":         payload["state"],
-        "started_at":    payload.get("started_at"),
-        "updated_at":    payload.get("updated_at") or payload.get("started_at"),
-        "completed_at":  payload.get("completed_at"),
-        "pid":           payload.get("pid"),
-        "host":          socket.gethostname(),
-        "hotels_total":  payload.get("hotels_total", 0),
-        "hotels_done":   payload.get("hotels_done", 0),
+        "job_id": payload["job_id"],
+        "state": payload["state"],
+        "started_at": payload.get("started_at"),
+        "updated_at": payload.get("updated_at") or payload.get("started_at"),
+        "completed_at": payload.get("completed_at"),
+        "pid": payload.get("pid"),
+        "host": socket.gethostname(),
+        "hotels_total": payload.get("hotels_total", 0),
+        "hotels_done": payload.get("hotels_done", 0),
         "hotels_failed": payload.get("hotels_failed", 0),
         "current_hotel": (payload.get("current") or {}).get("hotel_id"),
-        "current_step":  (payload.get("current") or {}).get("step"),
-        "ota":           spec.get("ota"),
-        "checkin_from":  checkins[0]  if checkins else None,
-        "checkin_to":    checkins[-1] if checkins else None,
-        "do_refresh":    spec.get("do_refresh"),
-        "refresh_only":  spec.get("refresh_only"),
-        "last_line":     (payload.get("last_line") or "")[:500],
-        "exit_code":     payload.get("exit_code"),
-        "spec":          json.dumps(spec, default=str),
+        "current_step": (payload.get("current") or {}).get("step"),
+        "ota": spec.get("ota"),
+        "checkin_from": checkins[0] if checkins else None,
+        "checkin_to": checkins[-1] if checkins else None,
+        "do_refresh": spec.get("do_refresh"),
+        "refresh_only": spec.get("refresh_only"),
+        "last_line": (payload.get("last_line") or "")[:500],
+        "exit_code": payload.get("exit_code"),
+        "spec": json.dumps(spec, default=str),
     }
     try:
         with conn.cursor() as cur:

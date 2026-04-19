@@ -26,7 +26,7 @@ import re
 import secrets
 import subprocess
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
@@ -78,8 +78,7 @@ class JobRequest(BaseModel):
     hotels: list[str] = Field(..., min_length=1, description="Subscription IDs")
     dates: str = Field(
         ...,
-        description="YYYY-MM-DD | YYYY-MM | YYYY-MM:YYYY-MM | "
-        "YYYY-MM-DD:YYYY-MM-DD | rolling:N",
+        description="YYYY-MM-DD | YYYY-MM | YYYY-MM:YYYY-MM | YYYY-MM-DD:YYYY-MM-DD | rolling:N",
     )
     ota: Literal["bookingdotcom", "branddotcom"] = "bookingdotcom"
     los: int | None = Field(None, ge=1, le=90)
@@ -112,7 +111,7 @@ class JobResponse(BaseModel):
 
 
 def _new_job_id() -> str:
-    return f"{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:6]}"
+    return f"{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:6]}"
 
 
 def _purge_finished() -> None:
@@ -154,11 +153,16 @@ def create_job(
 
     job_id = _new_job_id()
     cmd = [
-        "python", str(RUN_JOB_PY),
-        "--hotels", ",".join(req.hotels),
-        "--dates", req.dates,
-        "--ota", req.ota,
-        "--job-id", job_id,
+        "python",
+        str(RUN_JOB_PY),
+        "--hotels",
+        ",".join(req.hotels),
+        "--dates",
+        req.dates,
+        "--ota",
+        req.ota,
+        "--job-id",
+        job_id,
     ]
     if req.los is not None:
         cmd += ["--los", str(req.los)]
@@ -181,7 +185,7 @@ def create_job(
     return JobResponse(
         job_id=job_id,
         pid=proc.pid,
-        started_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        started_at=datetime.now(UTC).isoformat(timespec="seconds"),
     )
 
 
