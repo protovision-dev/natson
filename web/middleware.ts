@@ -5,11 +5,14 @@ const PUBLIC_PATHS = ["/login", "/signup"];
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  // Always allow auth API + Next internals + static assets.
+  // Always allow auth API + Next internals + favicon + assets the
+  // unauthenticated /login and /signup pages reference.
   if (
     pathname.startsWith("/api/auth") ||
     pathname.startsWith("/_next") ||
     pathname.startsWith("/favicon") ||
+    pathname === "/icon.svg" ||
+    pathname === "/login-bg.png" ||
     PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"))
   ) {
     return NextResponse.next();

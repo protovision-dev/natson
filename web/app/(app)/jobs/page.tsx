@@ -1,10 +1,17 @@
+import { headers } from "next/headers";
+
+import { auth } from "@/lib/auth";
+import { isAdmin } from "@/lib/admin";
 import { fetchActiveJobs, fetchRecentJobs, type ActiveJob, type RecentJob } from "@/lib/jobs";
+import { JobResumeButton } from "@/components/JobResumeButton";
 import { JobsAutoRefresh } from "./jobs-auto-refresh";
 import { relativeTime } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
 export default async function JobsPage() {
+  const session = await auth.api.getSession({ headers: await headers() });
+  const admin = isAdmin(session?.user.email);
   const [active, recent] = await Promise.all([fetchActiveJobs(), fetchRecentJobs(50)]);
 
   return (
@@ -17,7 +24,7 @@ export default async function JobsPage() {
         </h2>
         {active.length === 0 ? (
           <div className="rounded border border-line bg-white p-4 text-sm text-subtle">
-            No active scrapes. Use the Refresh rates button on the grid to start one.
+            No active scrapes. {admin ? "Trigger one from /admin." : ""}
           </div>
         ) : (
           <ActiveTable rows={active} />
@@ -28,7 +35,7 @@ export default async function JobsPage() {
         <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-subtle">
           Recent scrapes (last {recent.length})
         </h2>
-        <RecentTable rows={recent} />
+        <RecentTable rows={recent} admin={admin} />
       </section>
     </div>
   );
@@ -79,7 +86,7 @@ function ActiveTable({ rows }: { rows: ActiveJob[] }) {
   );
 }
 
-function RecentTable({ rows }: { rows: RecentJob[] }) {
+function RecentTable({ rows, admin }: { rows: RecentJob[]; admin: boolean }) {
   return (
     <div className="overflow-auto rounded border border-line bg-white">
       <table className="w-full text-sm">
@@ -93,6 +100,7 @@ function RecentTable({ rows }: { rows: RecentJob[] }) {
             <Th>Started</Th>
             <Th>Duration</Th>
             <Th>Exit</Th>
+            {admin && <Th>Actions</Th>}
           </tr>
         </thead>
         <tbody>
@@ -114,6 +122,22 @@ function RecentTable({ rows }: { rows: RecentJob[] }) {
               <Td>{relativeTime(r.started_at)}</Td>
               <Td>{r.duration_seconds}s</Td>
               <Td>{r.exit_code ?? "—"}</Td>
+              {admin && (
+                <Td>
+                  {r.resumed_to_job_id ? (
+                    <span className="text-[11px] text-subtle">
+                      resumed →{" "}
+                      <span className="font-mono">{r.resumed_to_job_id}</span>
+                    </span>
+                  ) : r.state === "failed" && r.hotels_done < r.hotels_total ? (
+                    <JobResumeButton
+                      jobId={r.job_id}
+                      hotelsDone={r.hotels_done}
+                      hotelsTotal={r.hotels_total}
+                    />
+                  ) : null}
+                </Td>
+              )}
             </tr>
           ))}
         </tbody>

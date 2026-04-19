@@ -35,6 +35,7 @@ export type RecentJob = {
   refresh_only: boolean | null;
   exit_code: number | null;
   last_line: string | null;
+  resumed_to_job_id: string | null;
 };
 
 export async function fetchActiveJobs(): Promise<ActiveJob[]> {
@@ -60,7 +61,8 @@ export async function fetchRecentJobs(limit = 50): Promise<RecentJob[]> {
       duration_seconds, ota,
       hotels_total, hotels_done, hotels_failed,
       checkin_from::text, checkin_to::text,
-      do_refresh, refresh_only, exit_code, last_line
+      do_refresh, refresh_only, exit_code, last_line,
+      resumed_to_job_id
     FROM recent_scrapes LIMIT ${limit}
   `;
   return [...rows];
@@ -76,7 +78,8 @@ export async function fetchJob(jobId: string): Promise<RecentJob | null> {
       END AS duration_seconds,
       ota, hotels_total, hotels_done, hotels_failed,
       checkin_from::text, checkin_to::text,
-      do_refresh, refresh_only, exit_code, last_line
+      do_refresh, refresh_only, exit_code, last_line,
+      resumed_to_job_id
     FROM scrape_jobs WHERE job_id = ${jobId}
   `;
   return rows[0] ?? null;
