@@ -7,12 +7,14 @@
 #
 # What changes vs dev:
 #   - Caddy is added as the only public-facing service (80, 443).
-#   - web stops publishing its own port; only Caddy reaches it
-#     internally.
-#   - web is pinned to NODE_ENV=production and its BETTER_AUTH_URL
-#     points at https://$DOMAIN.
+#   - web is pinned to NODE_ENV=production; BETTER_AUTH_URL points
+#     at https://$DOMAIN.
 #   - All services have `restart: always` so systemd-equivalent
 #     recovery is handled by docker.
+#
+# Note: `web` already binds its host port to 127.0.0.1 in the base
+# compose file, so the public IP never exposes it. No overlay needed
+# to drop the mapping.
 
 services:
   caddy:
@@ -24,7 +26,9 @@ services:
       - "443:443"
       - "443:443/udp" # HTTP/3 (QUIC)
     volumes:
-      - ../deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # Paths resolve from the project root (natsonhotels/), not this
+      # overlay's directory, so use the repo-relative `deploy/` prefix.
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
     environment:
@@ -36,8 +40,10 @@ services:
       - natson
 
   web:
-    # Replace the dev port mapping — only Caddy reaches web internally.
-    ports: []
+    # No port override needed — the base file already binds web's
+    # published port to 127.0.0.1, so only the VPS itself (and Caddy,
+    # via the internal docker bridge) can reach it. The public IP
+    # exposes only Caddy's 80/443.
     restart: always
     environment:
       NODE_ENV: production

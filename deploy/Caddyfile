@@ -4,11 +4,12 @@
 # Make sure DNS for the domain points at the VPS *before* you `docker
 # compose up`, or Caddy will back off and the first request will 5xx.
 #
-# Override the domain by exporting DOMAIN in the environment:
-#     export DOMAIN=rates.yourco.com
-#     docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml up -d
+# Override the domain by setting DOMAIN in the repo-root .env:
+#     DOMAIN=rates.yourco.com
+# docker-compose.prod.yml passes it through as a container env var and
+# Caddy's `{$DOMAIN:fallback}` syntax picks it up here.
 
-{$DOMAIN:rates.natson.local} {
+{$DOMAIN:natson.protovision.app} {
 	encode gzip zstd
 
 	# Reverse-proxy everything to the Next.js service on the internal

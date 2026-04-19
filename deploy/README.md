@@ -9,9 +9,9 @@ other services stay on the internal `natson` docker network.
    comfortable; 1 vCPU / 2 GB works if you cap `MAX_PARALLEL_JOBS=1`.
 2. Docker + docker compose plugin installed (`curl -fsSL
    https://get.docker.com | sh`).
-3. A DNS A record for your domain pointing at the VPS's public IP,
-   **resolving before you boot the stack** (Caddy's ACME challenge
-   fails without it).
+3. A DNS A record for `$DOMAIN` (defaults to `natson.protovision.app`)
+   pointing at the VPS's public IP, **resolving before you boot the
+   stack** — Caddy's ACME HTTP-01 challenge fails otherwise.
 4. Ports 80, 443, and 443/udp open on the VPS firewall.
 
 ## First-time bootstrap
@@ -120,3 +120,34 @@ GHCR keeps every commit-sha tag (see `.github/workflows/ci.yml`
   The dev fallback (log-to-stdout) is intentionally not a prod path.
 - Don't reuse `BETTER_AUTH_SECRET` across environments. Rotating it
   invalidates all sessions (which is sometimes what you want).
+
+## Known follow-ups (not blocking, but do them)
+
+### Run containers as a non-root user
+
+Three images still run as UID 0: `scraper`, `jobs-api`, `browser-api`.
+Only `web` drops privileges (to `app`). Fixing this is two-part:
+
+1. **Code change** — each of
+   `scraper/Dockerfile`, `jobs-api/Dockerfile`, `browser-api/Dockerfile`
+   gains:
+   ```dockerfile
+   RUN useradd -r -u 1001 app && mkdir -p /app/output && chown -R app:app /app
+   USER app
+   ```
+   (For `browser-api` the Camoufox cache also needs to land in a path
+   owned by `app`; point `XDG_CACHE_HOME` at `/app/.cache` and chown it.)
+
+2. **One-time volume migration** — the existing `session_vol` is
+   root-owned, so the first boot after the USER switch would fail with
+   `Permission denied` on every write. Run **once per environment**:
+   ```bash
+   docker compose down
+   docker run --rm -v natsonhotels_session_vol:/v alpine \
+       chown -R 1001:1001 /v
+   docker compose up -d
+   ```
+
+Do this on the VPS first (public attack surface). Local dev can follow
+whenever it's convenient — the isolation is less critical when nothing
+external can reach the containers.
