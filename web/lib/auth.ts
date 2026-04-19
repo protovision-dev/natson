@@ -2,11 +2,14 @@ import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { createAuthMiddleware, APIError } from "better-auth/api";
 import { Pool } from "pg";
 
+import { emailDomain, isAdmin } from "./admin";
 import { sendEmail } from "./email";
 
 declare global {
   // eslint-disable-next-line no-var
   var __auth: ReturnType<typeof betterAuth> | undefined;
+  // eslint-disable-next-line no-var
+  var __authPool: Pool | undefined;
 }
 
 // Server-side complexity check. Length (≥12) is enforced by better-auth
@@ -15,6 +18,31 @@ declare global {
 const PASSWORD_COMPLEXITY = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/;
 const PASSWORD_COMPLEXITY_MSG = "Password must include lowercase, uppercase, and a digit";
 
+async function isDomainAllowed(pool: Pool, domain: string): Promise<boolean> {
+  const r = await pool.query<{ exists: boolean }>(
+    "SELECT EXISTS (SELECT 1 FROM allowed_domains WHERE domain = $1) AS exists",
+    [domain.toLowerCase()],
+  );
+  return r.rows[0]?.exists === true;
+}
+
+/** Expose the auth-schema pool to /api/admin/* routes so they don't
+ *  spin up a second pool. Lazily initialises via the same code path
+ *  better-auth uses, then reuses on every call. */
+export function getAuthPool(): Pool {
+  if (!globalThis.__authPool) {
+    const url = process.env.AUTH_DATABASE_URL;
+    if (!url) throw new Error("AUTH_DATABASE_URL is required");
+    globalThis.__authPool = new Pool({
+      connectionString: url,
+      max: 5,
+      idleTimeoutMillis: 30_000,
+      options: "-c search_path=auth,public",
+    });
+  }
+  return globalThis.__authPool;
+}
+
 function makeAuth() {
   const url = process.env.AUTH_DATABASE_URL;
   if (!url) throw new Error("AUTH_DATABASE_URL is required");
@@ -22,12 +50,17 @@ function makeAuth() {
   // `options` sets PGOPTIONS for every connection in the pool, pinning
   // search_path so better-auth's unqualified `user`/`session`/`account`/
   // `verification` table references resolve inside the `auth` schema.
-  const pool = new Pool({
-    connectionString: url,
-    max: 5,
-    idleTimeoutMillis: 30_000,
-    options: "-c search_path=auth,public",
-  });
+  // Reuse the pool across HMR reloads in dev; otherwise every save
+  // would spawn a fresh Pool and the old idle connections would leak.
+  const pool =
+    globalThis.__authPool ??
+    new Pool({
+      connectionString: url,
+      max: 5,
+      idleTimeoutMillis: 30_000,
+      options: "-c search_path=auth,public",
+    });
+  globalThis.__authPool = pool;
 
   const isProd = process.env.NODE_ENV === "production";
   const baseURL = process.env.BETTER_AUTH_URL ?? "http://localhost:3020";
@@ -88,6 +121,7 @@ function makeAuth() {
       // Server-side gate so a direct API call can't bypass the
       // client-side complexity check.
       before: createAuthMiddleware(async (ctx) => {
+        // (a) password complexity on signup, reset, change.
         if (
           ctx.path === "/sign-up/email" ||
           ctx.path === "/reset-password" ||
@@ -98,6 +132,27 @@ function makeAuth() {
             (ctx.body as { newPassword?: string } | undefined)?.newPassword;
           if (password && !PASSWORD_COMPLEXITY.test(password)) {
             throw new APIError("BAD_REQUEST", { message: PASSWORD_COMPLEXITY_MSG });
+          }
+        }
+
+        // (b) signup-only: reject emails whose domain isn't on the
+        //     allow-list. Admin emails are always allowed so the
+        //     bootstrap admin can sign up before the list is seeded.
+        if (ctx.path === "/sign-up/email") {
+          const email = (ctx.body as { email?: string } | undefined)?.email?.toLowerCase();
+          if (!email) {
+            throw new APIError("BAD_REQUEST", { message: "email required" });
+          }
+          if (!isAdmin(email)) {
+            const domain = emailDomain(email);
+            if (!domain) {
+              throw new APIError("BAD_REQUEST", { message: "invalid email" });
+            }
+            if (!(await isDomainAllowed(pool, domain))) {
+              throw new APIError("FORBIDDEN", {
+                message: `Signups from @${domain} aren't allowed. Ask an admin to add the domain.`,
+              });
+            }
           }
         }
       }),
