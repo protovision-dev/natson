@@ -89,9 +89,7 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
           // Either the parent vanished or someone raced us. The
           // spawned scrape is real and will run; the UI button just
           // won't disappear until the user reloads.
-          console.warn(
-            `[resume] markResumed(${id}, ${json.job_id}) updated 0 rows`,
-          );
+          console.warn(`[resume] markResumed(${id}, ${json.job_id}) updated 0 rows`);
         }
       } catch (e) {
         // Hard failure (e.g. permission denied). Surface it in

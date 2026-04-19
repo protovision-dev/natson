@@ -103,10 +103,15 @@ jobs:
   # -----------------------------------------------------------------
   secret-scan:
     runs-on: ubuntu-latest
+    # PR-only: trufflehog's diff mode needs a meaningful base ≠ head.
+    # On a push to main (especially the very first push) base==head
+    # and the action errors with "BASE and HEAD commits are the same".
+    # Pre-merge PR scanning catches the same secrets before they land.
+    if: github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # trufflehog needs git history for diff mode
+          fetch-depth: 0
       - uses: trufflesecurity/trufflehog@v3.84.2
         with:
           path: ./
@@ -119,7 +124,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Trivy vulnerability scan
-        uses: aquasecurity/trivy-action@0.28.0
+        # Pin to master rather than a numbered tag — Aqua publishes
+        # numbered tags inconsistently (0.28.0 didn't exist as of
+        # 2026-04-19, breaking initial CI). master is the recommended
+        # ref in their README.
+        uses: aquasecurity/trivy-action@master
         with:
           scan-type: fs
           scan-ref: .
