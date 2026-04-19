@@ -185,10 +185,13 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
 
-  # jobs-api builds on top of the scraper image, so we build it after
-  # the scraper push lands. (For PR builds it's a single-shot build
-  # using FROM ghcr.io/.../natson-scraper:latest as the base — works
-  # because GHCR is public/read for the org.)
+  # jobs-api builds on top of the scraper image. We rebuild scraper
+  # locally inside this job (loaded into the docker daemon, not pushed)
+  # so jobs-api/Dockerfile's `FROM natson-scraper:latest` resolves
+  # without a GHCR pull — newly-pushed GHCR packages are private by
+  # default and the cross-job pull was getting `insufficient_scope`.
+  # The gha cache (scope=scraper) makes the second build near-free
+  # since the matrix already populated it.
   build-jobs-api:
     runs-on: ubuntu-latest
     needs: [build-images]
@@ -208,13 +211,13 @@ jobs:
           tags: |
             type=sha,prefix=,suffix=,format=short
             type=raw,value=latest
-      - name: Retag scraper as natson-scraper:latest locally
-        # jobs-api/Dockerfile says FROM natson-scraper:latest; pull the
-        # just-built scraper image from GHCR and tag it locally so the
-        # build can find it.
-        run: |
-          docker pull ghcr.io/${{ github.repository_owner }}/natson-scraper:latest
-          docker tag ghcr.io/${{ github.repository_owner }}/natson-scraper:latest natson-scraper:latest
+      - name: Build scraper locally so jobs-api FROM line resolves
+        uses: docker/build-push-action@v6
+        with:
+          context: ./scraper
+          load: true
+          tags: natson-scraper:latest
+          cache-from: type=gha,scope=scraper
       - uses: docker/build-push-action@v6
         with:
           context: ./jobs-api
