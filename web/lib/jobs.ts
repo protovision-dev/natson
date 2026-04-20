@@ -85,6 +85,30 @@ export async function fetchJob(jobId: string): Promise<RecentJob | null> {
   return rows[0] ?? null;
 }
 
+/** Force a stuck running/starting job to 'failed' in the DB so the
+ *  Resume flow becomes available. Does NOT kill any underlying OS
+ *  process — assumes the process is already dead (the common case
+ *  when this is needed). Returns the row count: 1 = killed, 0 = job
+ *  was already terminal or doesn't exist.
+ *
+ *  Uses the auth-schema pool (natson_auth) which has column-level
+ *  UPDATE on the four columns we touch (granted in migration 0022).
+ */
+export async function markJobFailed(jobId: string, reason: string): Promise<number> {
+  const { getAuthPool } = await import("./auth");
+  const r = await getAuthPool().query(
+    `UPDATE scrape_jobs
+        SET state        = 'failed',
+            completed_at = NOW(),
+            exit_code    = COALESCE(exit_code, -1),
+            last_line    = $2
+      WHERE job_id = $1
+        AND state IN ('starting','running')`,
+    [jobId, reason],
+  );
+  return r.rowCount ?? 0;
+}
+
 export async function subjectCodesToSubscriptionIds(subjectCodes: string[]): Promise<string[]> {
   if (subjectCodes.length === 0) return [];
   const rows = await sql<{ subscription_id: string }[]>`
