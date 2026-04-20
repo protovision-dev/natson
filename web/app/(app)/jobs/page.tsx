@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth";
 import { isAdmin } from "@/lib/admin";
 import { fetchActiveJobs, fetchRecentJobs, type ActiveJob, type RecentJob } from "@/lib/jobs";
 import { JobResumeButton } from "@/components/JobResumeButton";
+import { JobKillButton } from "@/components/JobKillButton";
 import { JobsAutoRefresh } from "./jobs-auto-refresh";
 import { relativeTime } from "@/lib/utils";
 
@@ -27,7 +28,7 @@ export default async function JobsPage() {
             No active scrapes. {admin ? "Trigger one from /admin." : ""}
           </div>
         ) : (
-          <ActiveTable rows={active} />
+          <ActiveTable rows={active} admin={admin} />
         )}
       </section>
 
@@ -41,7 +42,7 @@ export default async function JobsPage() {
   );
 }
 
-function ActiveTable({ rows }: { rows: ActiveJob[] }) {
+function ActiveTable({ rows, admin }: { rows: ActiveJob[]; admin: boolean }) {
   return (
     <div className="overflow-auto rounded border border-line bg-white">
       <table className="w-full text-sm">
@@ -56,6 +57,7 @@ function ActiveTable({ rows }: { rows: ActiveJob[] }) {
             <Th>Step</Th>
             <Th>Started</Th>
             <Th>Elapsed</Th>
+            {admin && <Th>Actions</Th>}
           </tr>
         </thead>
         <tbody>
@@ -78,6 +80,11 @@ function ActiveTable({ rows }: { rows: ActiveJob[] }) {
               <Td>{r.current_step ?? "—"}</Td>
               <Td>{relativeTime(r.started_at)}</Td>
               <Td>{r.running_seconds}s</Td>
+              {admin && (
+                <Td>
+                  <JobKillButton jobId={r.job_id} />
+                </Td>
+              )}
             </tr>
           ))}
         </tbody>
