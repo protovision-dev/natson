@@ -34,8 +34,14 @@ docker compose \
 
 # 4. Apply DB migrations + bootstrap app-tier roles.
 docker compose up -d postgres
-./db/migrate.sh up
-./db/bootstrap-app-roles.sh
+./db/bootstrap-app-roles.sh    # creates natson_ro + natson_auth roles
+./db/migrate.sh up             # schema migrations (uses the roles above)
+
+# 4b. Build images locally if you didn't pull from GHCR. BuildKit
+#     parallel-builds and races jobs-api ahead of scraper (jobs-api's
+#     `FROM natson-scraper:latest` then misses); disable BuildKit so
+#     compose builds sequentially in compose-file order.
+DOCKER_BUILDKIT=0 docker compose build
 
 # 5. Bring up the full stack.
 docker compose \

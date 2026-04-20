@@ -105,7 +105,15 @@ services:
       - natson
 
   jobs-api:
-    build: ./jobs-api
+    # `additional_contexts` tells buildx where to find the parent
+    # image for `FROM natson-scraper:latest` so it doesn't try to
+    # pull it from docker.io (which fails — there's no such public
+    # image). Pairs with `depends_on: scraper` so docker compose
+    # build/up orders the scraper image first.
+    build:
+      context: ./jobs-api
+      additional_contexts:
+        natson-scraper:latest: docker-image://natson-scraper:latest
     image: natson-jobs-api:latest
     container_name: natson-jobs-api
     restart: unless-stopped
